@@ -437,12 +437,27 @@ jobs:
 
           flutter analyze --no-pub --no-fatal-infos --fatal-warnings 2>&1 | tee analyze.txt
           status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            echo "::error::flutter analyze reported errors or warnings in ${{ matrix.app }}. Each finding is annotated individually below."
-            annotate analyze.txt 50
-            exit "$status"
-          fi
-          echo "flutter analyze clean (errors and warnings) for ${{ matrix.app }}."
+          [ "$status" -eq 0 ] && { echo "flutter analyze clean (errors and warnings) for ${{ matrix.app }}."; exit 0; }
+
+          # Split the levels BEFORE annotating, and lead with a single annotation
+          # carrying the authoritative counts.
+          #
+          # GitHub silently drops workflow-command annotations past a small,
+          # undocumented limit — this job recorded 12 in total, and a previous run
+          # reported one unused_import warning and one unused_field while four
+          # unused imports and two unused fields actually existed. Dumping every
+          # line made that worse, because ~20 info-level findings crowded out the
+          # warnings that actually block.
+          #
+          # So: infos are counted but not annotated (they are the P1-T5 ratchet,
+          # not a gate), and the count annotation is emitted FIRST so it survives.
+          # A count you can trust beats a list you cannot.
+          awk '/^[[:space:]]*(error|warning)[[:space:]]/' analyze.txt > analyze-blocking.txt || true
+          blocking=$(wc -l < analyze-blocking.txt | tr -d ' ')
+          infos=$(awk '/^[[:space:]]*info[[:space:]]/' analyze.txt | wc -l | tr -d ' ')
+          echo "::error::flutter analyze on ${{ matrix.app }}: ${blocking} blocking finding(s) (error/warning, annotated below) and ${infos} info-level finding(s) (not annotated — P1-T5 ratchet). GitHub drops annotations past a small limit, so treat these counts as authoritative and the list as a sample."
+          annotate analyze-blocking.txt 40
+          exit "$status"
 
       # NON-BLOCKING (for now): style.
       #

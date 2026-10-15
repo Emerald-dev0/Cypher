@@ -732,6 +732,36 @@ the `FAILED` line and the `E   assert` detail, said nothing about coverage); and
 attempt to test this by `sed`-substituting the command produced broken nested
 quoting and reported a false pass — the test was faulty, not the step.
 
+**S-18g — GitHub silently drops workflow-command annotations, so a per-finding
+report is not a complete report. · FIXED.**
+Once the analyze step could actually emit annotations (S-18f), it reported **one**
+`unused_import` warning and, in an earlier run, one `unused_field`. Static sweeps
+over the same tree found **four** unused `app_theme.dart` imports
+(`home_screen.dart`, `clipboard_screen.dart`, `guide_screen.dart`,
+`screen_recorder_screen.dart`) and **two** unused private fields
+(`connection_provider._lastLifecycleState`, `discovery_service._discovery`). None
+of those files carries an `// ignore:` directive, `analysis_options.yaml` has no
+exclusions, and all four screens are routed from `main.dart` — so the analyzer saw
+them and reported them; the annotations just did not all arrive. The job recorded
+12 annotations in total.
+
+The limit is undocumented. Two consequences follow, and both are now built into
+the step:
+
+1. **Emit the authoritative count first, as a single annotation.** It is small and
+   survives. The step now reports `N blocking finding(s) … and M info-level
+   finding(s)`, so the reader always knows how much is missing from the sample.
+2. **Annotate only what blocks.** Dumping every line — the S-18f fix — made this
+   *worse*, because ~20 info-level findings crowded out the handful of warnings
+   that actually fail the gate. Info findings are counted, not annotated; they are
+   the P1-T5 ratchet, not a gate.
+
+The broader rule, now in AGENTS.md §6: **a lossy channel cannot be the only
+channel.** Where a linter can be run over the tree by a script, write that script
+and treat CI as confirmation rather than discovery. The two sweeps used here are
+reproducible without a Dart toolchain — which matters, because there is no Flutter
+SDK in this environment and the analyzer cannot be run locally at all.
+
 **How these were diagnosed at all.** Job *logs* are served from
 `results-receiver.actions.githubusercontent.com`, a different host from
 `api.github.com`, and were unreachable from the environment where this was

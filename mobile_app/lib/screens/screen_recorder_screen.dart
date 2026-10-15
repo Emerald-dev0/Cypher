@@ -6,7 +6,6 @@ import '../providers/connection_provider.dart';
 import '../providers/file_provider.dart';
 import '../services/api_service.dart';
 import '../theme/colors.dart';
-import '../theme/app_theme.dart';
 import '../widgets/cypher_button.dart';
 import '../widgets/cypher_card.dart';
 

@@ -16,7 +16,6 @@ class DiscoveryService {
   DiscoveryService._();
 
   static const _serviceType = '_cypher._tcp';
-  static Discovery? _discovery;
 
   // ── mDNS Discovery ───────────────────────────────────────────
   static Future<List<DiscoveredPc>> discoverViaMdns({

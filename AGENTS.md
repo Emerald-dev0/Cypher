@@ -437,6 +437,15 @@ runs: tests failing with coverage passing, and coverage failing too — because 
 first version conflated them and sent the next reader to edit `fail_under` for a
 problem that was not coverage.
 
+**A lossy channel cannot be your only channel.** GitHub silently drops
+workflow-command annotations past a small undocumented limit — one job recorded 12
+in total and reported a single `unused_import` where four existed (audit S-18g).
+So emit the authoritative *count* as one small annotation first, then a capped
+sample, and annotate only findings that actually block; dumping every line lets
+info-level noise crowd out the warnings that fail the gate. Where a linter can be
+run over the tree by a script, write the script and treat CI as confirmation, not
+discovery.
+
 **Distinguish failure modes by a string only the failure produces.** Grepping for
 `Required test coverage` matched pytest's success line as well. Anchor on
 `^FAIL Required test coverage`. The same reasoning is why the annotation emitter
