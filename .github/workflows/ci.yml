@@ -524,14 +524,38 @@ jobs:
           [ "$status" -eq 0 ] && { echo "Release APK assembled (debug-signed smoke build)."; exit 0; }
 
           count_first "Android release assemble" "exit ${status}" \
-            "Gradle reports the actionable part after 'FAILURE:' / '* What went wrong:'; that section is annotated below. Treat the count as authoritative — GitHub drops annotations past a small limit."
+            "Error-marker lines from anywhere in the log are annotated first, then the Gradle FAILURE summary. Gradle prints a task's own diagnostics as it runs and the banner afterwards, so the cause is usually ABOVE the banner. Treat this count as authoritative — GitHub drops annotations past a small limit."
 
           if grep -qE "FAILURE:|^\* What went wrong:" build.txt; then
-            # Everything from the first Gradle failure banner onward. The lines
-            # before it are Flutter's progress spinner and thousands of lines of
-            # dependency resolution, which would crowd out the actual cause.
-            awk '/^FAILURE:|^\* What went wrong:/{p=1} p' build.txt > build-failure.txt
-            annotate build-failure.txt 60
+            # THE FIRST VERSION OF THIS EXTRACTOR WAS WRONG, and it is worth being
+            # precise about why. It took everything from the `FAILURE:` banner
+            # onward, on the reasoning that the lines before it are progress noise.
+            # That reported only Gradle's SUMMARY:
+            #     Execution failed for task ':app:minifyReleaseWithR8'.
+            #     > A failure occurred while executing ...R8Task$R8Runnable
+            #        > Compilation failed to complete
+            # Gradle prints a task's OWN output — R8's missing-class diagnostics,
+            # stack traces, "Caused by" chains — as the task runs, and only then
+            # prints the banner. The cause was above it and the extractor discarded
+            # it, which cost a seven-minute CI cycle to discover.
+            #
+            # A second attempt added a raw 70-line window ending at the banner. That
+            # was also wrong, but for the opposite reason: in a real Gradle log that
+            # window is almost entirely "Resolving dependencies..." and progress
+            # spinner lines, and since GitHub drops annotations past a small limit
+            # (S-18g) the noise crowds out the diagnostics that matter.
+            #
+            # So: error-marker lines from ANYWHERE in the log first, then the short
+            # FAILURE summary that names the task. Nothing else.
+            grep -E "Missing class|R8:|ProGuard|proguard|Caused by|ERROR|error:|Exception|OutOfMemory|Java heap|Unexpected|Compilation failed|Dart|kotlin.*error|Execution failed" build.txt | head -30 > build-failure.txt || true
+            markered=$(wc -l < build-failure.txt | tr -d ' ')
+            if [ "${markered:-0}" -eq 0 ]; then
+              echo "----- no recognised error markers; falling back to the log tail -----" >> build-failure.txt
+              tail -60 build.txt | grep -vE '^[[:space:]]*$' >> build-failure.txt
+            fi
+            echo "----- Gradle FAILURE summary -----" >> build-failure.txt
+            awk '/^FAILURE:|^\* What went wrong:/{p=1} p' build.txt >> build-failure.txt
+            annotate build-failure.txt 45
           else
             # No Gradle banner means the failure came from Flutter itself — a
             # missing plugin, a pub problem, or a Kotlin compile error reported
