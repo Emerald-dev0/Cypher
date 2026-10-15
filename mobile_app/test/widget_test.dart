@@ -27,7 +27,11 @@ void main() {
     });
 
     test('round-trips a token', () async {
-      const token = 'a' * 64; // matches secrets.token_hex(32) on the node
+      // 64 characters, matching secrets.token_hex(32) on the node. Not `const`:
+      // `*` on a String is not constant-evaluable, and `const token = 'a' * 64`
+      // is an analyzer ERROR (const_eval_type_num), not a style complaint — this
+      // test file would have failed the blocking gate it was added to satisfy.
+      final token = List.filled(64, 'a').join();
       await StorageService.saveToken(token);
       expect(await StorageService.getToken(), token);
     });
