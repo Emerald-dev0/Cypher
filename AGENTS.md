@@ -398,12 +398,27 @@ a gate did anything, it is not a gate.
 
 Job **logs** are served from `results-receiver.actions.githubusercontent.com`, a
 different host from `api.github.com`, and may be unreachable. Job **annotations**
-and **step summaries** are reachable via the API, so put diagnostics there:
+are reachable, and naming the failing step is usually enough to act on:
 
 ```bash
-gh api repos/OWNER/REPO/actions/jobs/JOB_ID   --jq '.steps[] | select(.conclusion=="failure") | .name'
+gh api repos/OWNER/REPO/actions/jobs/JOB_ID \
+  --jq '.steps[] | select(.conclusion=="failure") | .name'
 gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations --jq '.[].message'
 ```
+
+**Step summaries (`$GITHUB_STEP_SUMMARY`) are NOT readable through the API.** That
+was assumed, tried, and `.output.summary` on the check-run came back empty — so
+this paragraph replaces a claim in an earlier revision of this file that said they
+were reachable. Do not rely on them for anything you need to debug from. Emit
+diagnostics as `::error::` / `::warning::` annotations instead, which is why the
+`flutter analyze` step re-emits one annotation per finding (capped at 40, with the
+total reported separately) rather than writing a summary.
+
+**Set `shell: bash` explicitly on any job whose steps use bash syntax.** Windows
+runners default to PowerShell, so `|| { … }`, `tee`, `grep -q` and `[ "$x" -ne 0 ]`
+fail there while passing on Linux from *identical source* — that is audit S-18e,
+and it cost a CI cycle to find. The node job sets it once in `defaults.run.shell`;
+do the same for any new job rather than repeating it per step.
 
 **A permanently red gate teaches people to ignore CI.** Two gates are therefore
 deliberately non-blocking and both are ratchets, not aspirations: coverage
