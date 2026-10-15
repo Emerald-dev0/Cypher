@@ -15,7 +15,22 @@ permissions:
   contents: read
 
 env:
-  FLUTTER_VERSION: "3.27.1"
+  # Must satisfy the committed pubspec.lock files, whose `sdks:` footer reads
+  #   dart: ">=3.10.3 <4.0.0"
+  #   flutter: ">=3.38.4"
+  # Pinning an older SDK makes `flutter pub get` fail outright, which kills both
+  # Flutter jobs at "Install dependencies" before a single line of Dart is
+  # compiled or tested. That happened with 3.27.1.
+  #
+  # 3.38.9 is the newest hotfix on the 3.38 line. Flutter's own CHANGELOG records
+  # that 3.38 "adds support for Dart 3.10 stable", and staying inside the line
+  # that generated the lockfile minimises analyzer drift on a codebase that has
+  # never been through `dart format`.
+  #
+  # If you bump this, bump the lockfiles in the same PR by running
+  # `flutter pub get` in both apps and committing the result — CI verifies
+  # pubspec.lock is unchanged after install.
+  FLUTTER_VERSION: "3.38.9"
   PYTHON_VERSION: "3.12"
   JAVA_VERSION: "17"
 
@@ -268,8 +283,37 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Record toolchain versions
+        run: |
+          {
+            echo "## ${{ matrix.app }} toolchain"
+            echo '```'
+            flutter --version
+            dart --version
+            echo '```'
+            echo "Expected by pubspec.lock:"
+            echo '```'
+            tail -n 3 pubspec.lock
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          # On failure, put the resolver error in the step summary. Job logs are
+          # not reachable from every environment (the results-receiver host is
+          # separate from api.github.com), and a bare "exit code 1" at
+          # "Install dependencies" is not enough to act on.
+          if ! flutter pub get; then
+            {
+              echo "### :x: flutter pub get failed in ${{ matrix.app }}"
+              echo "This is almost always an SDK/lockfile mismatch, not a code"
+              echo "problem. Compare the toolchain versions above with the"
+              echo "\`sdks:\` footer of pubspec.lock. Fix by either bumping"
+              echo "FLUTTER_VERSION in this workflow or regenerating the"
+              echo "lockfile with \`flutter pub get\` and committing it."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Verify pubspec.lock is committed and current
         run: |
@@ -391,24 +435,72 @@ jobs:
 
       - name: Check relative Markdown links resolve
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # NOTE: deliberately NOT `set -e`. This step is a pipeline of greps, and
+          # grep exits 1 when it finds nothing — which is the normal, correct
+          # outcome for a document with no relative links. Under `set -e` plus
+          # `pipefail` that exit code propagated to `|| fail=1` and the job failed
+          # WITHOUT PRINTING ANYTHING, on a Flutter-generated
+          # LaunchImage.imageset/README.md that contains no links at all.
+          #
+          # That is the third silent-failure found in this workflow (see audit
+          # S-18 and S-06b). The lesson generalises: any CI check built as
+          # `if <pipeline>; then fail; fi` fails closed-to-green or red-to-silent
+          # when a component legitimately produces no output. P1-C5 exists to
+          # audit the rest of them.
+
           fail=0
-          # Collect every markdown file except vendored/generated output.
-          mapfile -t files < <(git ls-files '*.md' ':!:**/build/**')
+          checked=0
+          links=0
+
+          # Project documentation only. Flutter emits generated README files into
+          # the iOS/macOS asset catalogues; those are vendored boilerplate, not
+          # docs, and are excluded for the same reason .xib files are excluded
+          # from secret scanning.
+          mapfile -t files < <(
+            git ls-files '*.md' \
+              ':(exclude)**/build/**' \
+              ':(exclude)**/Assets.xcassets/**' \
+              ':(exclude)**/ios/Runner/**' \
+              ':(exclude)**/macos/Runner/**'
+          )
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No markdown files found — the pathspec is wrong, not the docs."
+            exit 1
+          fi
+
           for f in "${files[@]}"; do
+            checked=$((checked + 1))
             dir=$(dirname "$f")
+
             # Extract relative links: [text](path) where path has no scheme.
-            grep -oE '\]\(([^)]+)\)' "$f" 2>/dev/null \
-              | sed -E 's/^\]\(//; s/\)$//' \
-              | grep -vE '^(https?:|mailto:|#|/)' \
-              | sed -E 's/#.*$//' \
-              | grep -v '^$' \
-              | while read -r link; do
-                  target="$dir/$link"
-                  if [ ! -e "$target" ]; then
-                    echo "::error::$f -> broken link: $link"
-                    exit 1
-                  fi
-                done || fail=1
+            # `|| true` on each stage so "nothing matched" is not an error.
+            mapfile -t found < <(
+              {
+                grep -oE '\]\(([^)]+)\)' "$f" 2>/dev/null || true
+              } \
+                | sed -E 's/^\]\(//; s/\)$//' \
+                | { grep -vE '^(https?:|mailto:|#|/)' || true; } \
+                | sed -E 's/#.*$//' \
+                | { grep -v '^$' || true; }
+            )
+
+            for link in "${found[@]}"; do
+              [ -n "$link" ] || continue
+              links=$((links + 1))
+              target="$dir/$link"
+              if [ ! -e "$target" ]; then
+                echo "::error::$f -> broken relative link: $link (resolved to $target)"
+                fail=1
+              fi
+            done
           done
+
+          echo "Checked $links relative links across $checked markdown files."
+          if [ "$links" -eq 0 ]; then
+            # Not a failure, but worth saying out loud: a docs gate that checked
+            # nothing would otherwise look identical to one that passed.
+            echo "::warning::No relative links were found to check. If docs/ has links, this step's extraction regex has stopped matching."
+          fi
           exit $fail

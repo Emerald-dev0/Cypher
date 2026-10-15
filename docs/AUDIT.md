@@ -608,6 +608,73 @@ when `<cmd>` errors for an unrelated reason. Prefer a form where an unexpected
 exit status is itself a failure, or add a canary. Worth auditing the other
 workflows for the same shape (P1-C5).
 
+#### S-18b/c/d — three more, all found by watching CI rather than reading it
+
+The first CI run of this repository produced four distinct failures, and every one
+of them was in configuration *written during this audit* and never executed before
+being committed. They are recorded together because they share a single root
+cause, which is more useful than the individual bugs.
+
+**S-18b — `requirements.txt` pinned a version that does not exist. · FIXED.**
+`python-engineio==4.9.5` is not on PyPI; the 4.9 line goes 4.9.0, 4.9.1, then
+4.10.0. `pip install -r requirements-dev.txt` therefore failed, taking both Node
+matrix jobs down at "Install dependencies". Corrected to `4.9.1`, which satisfies
+`python-socketio 5.11.4`'s declared `python-engineio>=4.8.0`.
+
+Every pin in both requirements files was then verified against the PyPI JSON API
+rather than one at a time: 27 pins checked, 1 bad. `mypy` additionally needed
+`types-requests`, because `core/utils.py` imports `requests`, which ships no
+`py.typed` marker — and `ignore_missing_imports = true` does **not** suppress
+that. It only covers modules mypy cannot find at all, not modules installed
+without stubs. So mypy passed in a venv where `requests` was absent and failed on
+a clean install: a check whose result depended on what happened to be around.
+
+**S-18c — the docs link-checker failed without printing anything. · FIXED.** The
+step ran `set -euo pipefail` over a pipeline of greps. A document with no links at
+all makes `grep -oE` exit 1; with `pipefail` that propagated to `|| fail=1`, and
+the job failed **silently** — no `::error::`, no broken link named. The trigger
+was `mobile_app/ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md`, a
+Flutter-generated asset readme that is vendored boilerplate and should never have
+been in scope.
+
+Fixed by dropping `set -e` for that step, adding `|| true` to each grep stage,
+excluding generated asset catalogues, and — most importantly — **printing what it
+checked**: `Checked 171 relative links across 27 markdown files.` A docs gate that
+checks nothing otherwise looks identical to one that passed.
+
+**S-18d — the Flutter SDK pin contradicted the committed lockfiles. · FIXED.**
+`FLUTTER_VERSION` was `3.27.1`. Both `pubspec.lock` files end with:
+
+```yaml
+sdks:
+  dart: ">=3.10.3 <4.0.0"
+  flutter: ">=3.38.4"
+```
+
+So `flutter pub get` failed and **both Flutter jobs died at "Install
+dependencies"** — the new Dart tests, the private-network guard and the two
+replacement widget tests were never compiled at all. Repinned to `3.38.9`, the
+newest hotfix on the line that generated the lockfile; Flutter's own CHANGELOG
+records that 3.38 "adds support for Dart 3.10 stable". Staying inside that line
+minimises analyzer drift on a codebase that has never been through `dart format`.
+
+**The shared root cause.** All four were configuration asserted to be correct
+without being executed. Three of them (S-18, S-18b, S-18d) would have been caught
+by running the step once locally; the fourth (S-18c) by noticing that a passing
+check printed no evidence. Hence two standing rules, now in `AGENTS.md` §6:
+
+1. **A CI step must be run locally before it is committed** — extract the `run:`
+   body from the YAML and execute it verbatim. That is how S-18c was diagnosed,
+   and it is cheap.
+2. **A check that passes must say what it checked.** Silent success and silent
+   failure are indistinguishable, and only one of them is safe.
+
+Note also that job *logs* are served from `results-receiver.actions.githubusercontent.com`,
+a different host from `api.github.com`, and were unreachable from the environment
+where this was debugged. Job **annotations** and **step summaries** are reachable
+through the API, which is why the Flutter job now writes its resolved toolchain
+versions and any `pub get` failure into `$GITHUB_STEP_SUMMARY` (P1-C5).
+
 ### 🟡 S-17 — Guest session revocation was a silent no-op · **FIXED**
 
 See **S-13a** for the full analysis. Recorded here as well because it is a

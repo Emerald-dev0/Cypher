@@ -370,6 +370,41 @@ failure, and you must delete the markers in the same PR. Do not "fix" this by
 removing `strict` — the whole point is that a closed gap cannot be left
 undocumented.
 
+**Run a CI step locally before you commit it.** Extract the `run:` body from the
+YAML and execute it verbatim:
+
+```bash
+python -c "import yaml,pathlib; d=yaml.safe_load(open('.github/workflows/ci.yml')); \
+  pathlib.Path('/tmp/step.sh').write_text(next(s['run'] for s in d['jobs']['docs']['steps'] if 'run' in s))"
+bash /tmp/step.sh
+```
+
+Four CI defects shipped in one pass because the configuration was written and
+never executed: a `git grep` guard using a GNU-grep-only flag (it errored inside an
+`if`, so it silently never ran — audit S-18); `python-engineio==4.9.5`, a version
+that does not exist on PyPI (S-18b); a docs link-checker that failed **without
+printing anything** because `set -euo pipefail` turned "this document has no
+links" into a job failure (S-18c); and `FLUTTER_VERSION: 3.27.1` against
+lockfiles requiring `flutter >= 3.38.4`, which killed both Flutter jobs before a
+line of Dart was compiled (S-18d). Related: verify dependency pins exist rather
+than trusting recall, and note that mypy's `ignore_missing_imports` does **not**
+cover installed-but-untyped packages — those need `types-*` stubs.
+
+**A check that passes must say what it checked.** Silent success and silent
+failure are indistinguishable, and only one of them is safe. The docs job now
+prints `Checked 171 relative links across 27 markdown files.`; the hygiene job
+runs a canary against its own pattern. If you cannot tell from the output whether
+a gate did anything, it is not a gate.
+
+Job **logs** are served from `results-receiver.actions.githubusercontent.com`, a
+different host from `api.github.com`, and may be unreachable. Job **annotations**
+and **step summaries** are reachable via the API, so put diagnostics there:
+
+```bash
+gh api repos/OWNER/REPO/actions/jobs/JOB_ID   --jq '.steps[] | select(.conclusion=="failure") | .name'
+gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations --jq '.[].message'
+```
+
 **A permanently red gate teaches people to ignore CI.** Two gates are therefore
 deliberately non-blocking and both are ratchets, not aspirations: coverage
 (`fail_under = 35` against a measured 35.73, target 70 at P1-T1) and the Dart
