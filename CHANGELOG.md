@@ -178,6 +178,12 @@ source at all — default copyright, all rights reserved.
   code behaved exactly as documented. Now keyed on `os.name`, matching the idiom
   `test_sandbox.py` already used. The underlying Windows gap is recorded as audit
   S-19 and tracked as P3-L7.
+- **Release APK minify failed on unused Play Core classes.** Flutter's embedding
+  references `com.google.android.play.core.splitinstall.*` for deferred
+  components. This project ships APKs via GitHub Releases and does not include
+  Play Core, so AGP 8 + R8 treated the missing classes as a hard error
+  (`:app:minifyReleaseWithR8`). Added `-dontwarn` for those packages rather than
+  pulling Play Core in as a dependency. (Audit F-14)
 - **The mobile app did not compile.** Four analyzer *errors*, found only when the
   blocking `flutter analyze` gate ran for the first time:
   `screens/home_screen.dart` used `SliverSizedBox` in three places and that class

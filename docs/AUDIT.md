@@ -63,20 +63,20 @@ three S-13 sub-bugs) and corrected one (S-03). S-19 was added later, when the
 | Severity | Count | Definition |
 | --- | --- | --- |
 | 🔴 Critical | 14 | Blocks public release; security exposure or total feature failure |
-| 🟠 High | 15 | Breaks a shipped feature, a platform, or the release pipeline |
+| 🟠 High | 16 | Breaks a shipped feature, a platform, or the release pipeline |
 | 🟡 Medium | 12 | Correctness, maintainability or professionalism defects |
 | 🔵 Low | 1 | Hygiene, polish, documentation drift |
-| **Total** | **42** | |
+| **Total** | **43** | |
 
 ### Status after this pass
 
 | | Found | Fixed | Partially fixed | Deferred to roadmap |
 | --- | --- | --- | --- | --- |
 | 🔴 Critical | 14 | **12** | 1 | 1 |
-| 🟠 High | 15 | **6** | 2 | 7 |
+| 🟠 High | 16 | **7** | 2 | 7 |
 | 🟡 Medium | 12 | **4** | 2 | 6 |
 | 🔵 Low | 1 | **1** | 0 | 0 |
-| **Total** | **42** | **23** | **5** | **14** |
+| **Total** | **43** | **24** | **5** | **14** |
 
 **Exactly one critical finding remains open: S-03, the paired-device filesystem
 sandbox (P1-S2).** Everything else critical is fixed or partially fixed. That is
@@ -1187,6 +1187,36 @@ in `docs/plans/features-and-applications.md`, not here.
 
 Both uploads were changed together because they had the identical defect and a fix
 to only one would have left the drop-zone screen lying to its user.
+
+### 🟠 F-14 — Release APK minify fails because R8 treats unused Play Core as missing · **FIXED**
+
+The first honest `flutter build apk --release` in this project's history spent
+~6.5 minutes in Gradle and failed at `:app:minifyReleaseWithR8` with
+`Compilation failed to complete`. Diagnosing it took two extra CI cycles because
+the first extractor reported only Gradle's *summary* of the failure — the cause
+is printed **above** the `FAILURE:` banner, as the task runs.
+
+The cause, once captured:
+
+```
+Missing class com.google.android.play.core.splitinstall.SplitInstallManager
+Missing class com.google.android.play.core.splitcompat.SplitCompatApplication
+ERROR: Missing classes detected while running R8.
+```
+
+Flutter's embedding (`PlayStoreDeferredComponentManager`,
+`FlutterPlayStoreSplitApplication`) references Google Play Core so deferred
+component loading works when the app is installed from Play. This project ships
+APKs via GitHub Releases and already sets `dependenciesInfo.includeInApk = false`
+in `app/build.gradle.kts`, so those classes are not on the classpath. AGP 8 + R8
+full mode treats a missing class as an **error**, not a warning.
+
+Fixed with `-dontwarn com.google.android.play.core.splitinstall.**` and
+`-dontwarn com.google.android.play.core.splitcompat.**` in
+`android/app/proguard-rules.pro`. `-dontwarn`, not `-keep` and not a Play Core
+dependency: we do not want to pull Play in just to satisfy a shrinker, and the
+engine already degrades to "deferred components unavailable" when
+`SplitInstallManager` is missing at runtime.
 
 ---
 

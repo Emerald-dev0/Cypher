@@ -34,6 +34,21 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 
+# Flutter's engine references Google Play Core (splitinstall / SplitCompat)
+# so deferred-component loading works when the app is installed from Play.
+# This project ships APKs via GitHub Releases and explicitly sets
+# `dependenciesInfo.includeInApk = false` in app/build.gradle.kts, so those
+# classes are not on the classpath. AGP 8 + R8 full mode treats a missing class
+# as an error (`minifyReleaseWithR8` / "Compilation failed to complete") unless
+# it is told the reference is intentional.
+#
+# `-dontwarn`, not `-keep`: we do not want to pull Play Core in as a
+# dependency just to satisfy a shrinker, and we do not want to keep classes
+# that are not there. The engine already degrades to "deferred components are
+# unavailable" when SplitInstallManager is missing at runtime.
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.splitcompat.**
+
 # Kotlin metadata
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
