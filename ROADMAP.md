@@ -124,6 +124,7 @@ abused.** Estimated 3–4 weeks part-time.
 | P1-C2 | `docs/product/privacy.md` | What is stored, where, what leaves the device (answer: nothing, and the one user-initiated GitHub version check). Feeds the Play Store Data Safety form. | 1d |
 | P1-C3 | Troubleshooting guide | The five transports, firewall, mDNS failure modes, "works in debug not release". Absorbs the deleted `TEST_ALL_CONNECTIONS.md`. | 2d |
 | P1-C4 | Issue triage labels + first-response SLA documented | | 0.5d |
+| **P1-C5** | Audit every CI check for the fail-open shape | S-18 found a security gate that had *never run*: `git grep --exclude-dir=…` is GNU-grep syntax, so it exited non-zero inside an `if` condition, `set -e` did not fire, and the step printed "passed". Review all four workflows for `if <cmd>; then fail; fi` where `<cmd>` can error for unrelated reasons, and add a canary self-test to every gate whose failure mode is silence. Also add a CI step that validates the workflow YAML parses — `ci.yml` separately contained a plain scalar with `\|\| { … }` that PyYAML rejects outright. | 1d |
 | P1-C5 | `docs/RELEASES.md` — how to cut a release | Secrets setup, tag procedure, keystore generation, draft review, Play Store upload. | 1d |
 
 **Phase 1 exit criteria:** CI green on a clean clone; ≥ 70% node coverage; the

@@ -62,20 +62,20 @@ three S-13 sub-bugs) and corrected one (S-03).
 | Severity | Count | Definition |
 | --- | --- | --- |
 | 🔴 Critical | 13 | Blocks public release; security exposure or total feature failure |
-| 🟠 High | 13 | Breaks a shipped feature, a platform, or the release pipeline |
+| 🟠 High | 14 | Breaks a shipped feature, a platform, or the release pipeline |
 | 🟡 Medium | 11 | Correctness, maintainability or professionalism defects |
 | 🔵 Low | 1 | Hygiene, polish, documentation drift |
-| **Total** | **38** | |
+| **Total** | **39** | |
 
 ### Status after this pass
 
 | | Found | Fixed | Partially fixed | Deferred to roadmap |
 | --- | --- | --- | --- | --- |
 | 🔴 Critical | 13 | **11** | 1 | 1 |
-| 🟠 High | 13 | **4** | 2 | 7 |
+| 🟠 High | 14 | **5** | 2 | 7 |
 | 🟡 Medium | 11 | **4** | 2 | 5 |
 | 🔵 Low | 1 | **1** | 0 | 0 |
-| **Total** | **38** | **20** | **5** | **13** |
+| **Total** | **39** | **21** | **5** | **13** |
 
 **Exactly one critical finding remains open: S-03, the paired-device filesystem
 sandbox (P1-S2).** Everything else critical is fixed or partially fixed. That is
@@ -513,6 +513,52 @@ the exact set and fail if a name drifts. Logging moved to `_record_command()`,
 called after a token is confirmed, with the entry list bounded to 500 and
 `source_ip` attached. Regression tests: `test_anonymous_non_json_body_gets_401_not_415`
 (parametrised over the sensitive routes), `test_screenshot_cooldown_does_not_run_before_auth`.
+
+### 🟠 S-18 — A CI security gate silently failed open · **FIXED**
+
+Found only by watching the first CI run of this repository. The hygiene job's
+guard against reintroducing the hardcoded node token read:
+
+```bash
+if git grep -nI --exclude-dir=.git 'cypher-internal-pc-app-token' -- . ; then
+  echo "::error::Hardcoded internal token literal reintroduced."
+  fail=1
+fi
+```
+
+`--exclude-dir` is **GNU grep** syntax. `git grep` rejects it, prints a usage
+error and exits non-zero. Because the command sat in an `if` condition,
+`set -euo pipefail` did not fire on it — a failing condition is not an error — so
+the branch was skipped and the step went on to print `Hygiene checks passed.`
+
+**The gate had never once run.** Reintroducing the published credential would
+have merged cleanly with a green tick next to a job whose entire purpose was to
+stop it. This is the failure mode that matters most in CI: not a red build, which
+gets fixed, but a green one that means nothing.
+
+Three fixes, because the bug had three layers:
+
+1. **Correct syntax.** `git grep -I` already skips binaries and searches only
+   tracked files, so no exclude flag is needed at all.
+2. **Match the assignment, not the bare literal.** `docs/AUDIT.md`,
+   `CHANGELOG.md` and the workflow's own canary all quote
+   `INTERNAL_TOKEN = "cypher-internal-pc-app-token-2024"` on purpose — an audit
+   that refuses to name the credential it found is not actionable, since a
+   maintainer needs to know which key to rotate. The pattern now requires a token
+   variable being *assigned* the literal, and those files are excluded by
+   pathspec. Quoting it in prose is correct; assigning it is the vulnerability.
+3. **A canary, because layer 1 is not enough on its own.** The step now asserts
+   that its own pattern still matches a known-bad string before it runs. A gate
+   that can fail open needs a self-test; otherwise the same typo class silently
+   disables it again.
+
+Verified in both directions locally: reintroducing the literal exits 1 with the
+error annotation, and a clean tree exits 0.
+
+**Generalise this.** Any CI check written as `if <cmd>; then fail; fi` fails open
+when `<cmd>` errors for an unrelated reason. Prefer a form where an unexpected
+exit status is itself a failure, or add a canary. Worth auditing the other
+workflows for the same shape (P1-C5).
 
 ### 🟡 S-17 — Guest session revocation was a silent no-op · **FIXED**
 
