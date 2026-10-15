@@ -1,6 +1,9 @@
-Analyzing APP...
-
-  error - Undefined name 'foo' - lib/screens/x.dart:12:5 - undefined_identifier
-  warning - Deprecated member use 100% - lib/y.dart:3:1 - deprecated_member_use
-
-2 issues found. (ran in 4.1s)
+Analyzing mobile_app...
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/a.dart:7:8 - unused_import
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/b.dart:10:8 - unused_import
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/c.dart:3:8 - unused_import
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/d.dart:9:8 - unused_import
+warning - The value of the field '_discovery' isn't used - lib/services/e.dart:19:21 - unused_field
+   info - withOpacity is deprecated 100% - lib/f.dart:1:1 - deprecated_member_use
+   info - BuildContext across async gaps - lib/g.dart:2:2 - use_build_context_synchronously
+7 issues found.

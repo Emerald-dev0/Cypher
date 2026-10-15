@@ -259,29 +259,7 @@ jobs:
           set +e
           set -uo pipefail
 
-          # annotate <file> [max]
-          # Emit each non-empty line of <file> as its own workflow annotation.
-          # Job logs are served from a different host and may be unreachable, and
-          # step summaries are not readable through the API at all, so annotations
-          # are the only diagnostic channel that reliably survives. No pattern
-          # matching: an emitter that only fires on output shaped the way its
-          # author expected is how the previous version silently reported nothing.
-          annotate() {
-            local f="$1" max="${2:-50}" n=0
-            while IFS= read -r line; do
-              [ -n "$line" ] || continue
-              n=$((n + 1))
-              [ "$n" -le "$max" ] || continue
-              line=${line//%/%25}
-              line=${line//$'\r'/%0D}
-              line=${line//$'\n'/%0A}
-              echo "::error::${line}"
-            done < "$f"
-            if [ "$n" -gt "$max" ]; then
-              echo "::error::$((n - max)) further finding(s) suppressed; see the job log."
-            fi
-            echo "Annotated $n finding(s) from $f."
-          }
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
 
           pytest tests -q --cov=core --cov-report=term-missing 2>&1 | tee pytest.log
           status=${PIPESTATUS[0]}
@@ -411,29 +389,7 @@ jobs:
           set +e
           set -uo pipefail
 
-          # annotate <file> [max]
-          # Emit each non-empty line of <file> as its own workflow annotation.
-          # Job logs are served from a different host and may be unreachable, and
-          # step summaries are not readable through the API at all, so annotations
-          # are the only diagnostic channel that reliably survives. No pattern
-          # matching: an emitter that only fires on output shaped the way its
-          # author expected is how the previous version silently reported nothing.
-          annotate() {
-            local f="$1" max="${2:-50}" n=0
-            while IFS= read -r line; do
-              [ -n "$line" ] || continue
-              n=$((n + 1))
-              [ "$n" -le "$max" ] || continue
-              line=${line//%/%25}
-              line=${line//$'\r'/%0D}
-              line=${line//$'\n'/%0A}
-              echo "::error::${line}"
-            done < "$f"
-            if [ "$n" -gt "$max" ]; then
-              echo "::error::$((n - max)) further finding(s) suppressed; see the job log."
-            fi
-            echo "Annotated $n finding(s) from $f."
-          }
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
 
           flutter analyze --no-pub --no-fatal-infos --fatal-warnings 2>&1 | tee analyze.txt
           status=${PIPESTATUS[0]}
@@ -494,7 +450,36 @@ jobs:
           exit 0
 
       - name: Test
-        run: flutter test --no-pub --reporter expanded
+        run: |
+          # `set +e` is load-bearing — see .github/scripts/annotate.sh.
+          set +e
+          set -uo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
+
+          flutter test --no-pub --reporter expanded 2>&1 | tee test.txt
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && { echo "flutter test passed for ${{ matrix.app }}."; exit 0; }
+
+          fails=$(grep -c '\[E\]' test.txt || true)
+          if [ "${fails:-0}" -gt 0 ]; then
+            count_first "flutter test on ${{ matrix.app }}" \
+              "${fails} test(s) failed" \
+              "Test names and assertion detail are annotated below. GitHub drops annotations past a small limit, so treat this count as authoritative and the list as a sample."
+            grep -E '\[E\]|Expected|Actual|Which:|Exception|Error:' test.txt > test-failures.txt || true
+            annotate test-failures.txt 60
+          else
+            # No `[E]` marker but a non-zero exit is almost always a COMPILE error
+            # in lib/ or test/, which flutter test reports without marking a test
+            # as failed. Say so explicitly: "tests failed" sends the next reader to
+            # the wrong file, and there is no Dart toolchain available locally to
+            # check this any other way.
+            count_first "flutter test on ${{ matrix.app }}" \
+              "exit ${status} with no failing-test marker" \
+              "This is usually a COMPILE error in lib/ or test/, not an assertion failure. The tail of the output is annotated below."
+            tail -60 test.txt > test-failures.txt
+            annotate test-failures.txt 60
+          fi
+          exit "$status"
 
   # ───────────────────────────────────────────────────────────
   # Android assemble — proves a release APK can actually be built
