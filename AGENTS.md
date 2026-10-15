@@ -344,6 +344,40 @@ through a Flask `Blueprint`. The decomposition plan is
 because 8.9.x hangs the Gradle daemon on Windows. Dependabot is configured to
 ignore it. Unlocking it is a tracked task (P2-M9), not a drive-by upgrade.
 
+**Never link a document that does not exist yet.** The CI `docs` job fails on any
+relative Markdown link whose target is missing, so a planned document must be
+named as a code span — `` `product/troubleshooting.md` (P1-C3) `` — and only
+turned into a real link in the commit that creates it. Note the relative depth:
+files under `docs/product/` reach the repo root with `../../`, not `../`. Run the
+checker before pushing:
+
+```bash
+git ls-files '*.md' | while read -r f; do d=$(dirname "$f")
+  grep -oE '\]\(([^)]+)\)' "$f" | sed -E 's/^\]\(//; s/\)$//' \
+    | grep -vE '^(https?:|mailto:|#|/)' | sed -E 's/#.*$//' | grep -v '^$' \
+    | while read -r l; do [ -e "$d/$l" ] || echo "BROKEN $f -> $l"; done
+done
+```
+
+It only inspects **tracked** files. A brand-new doc is invisible to it until
+`git add`, which is how four broken links reached a commit in this very
+repository before being caught.
+
+**An xfail that starts passing fails the build.** That is deliberate. The ten
+`strict=True` xfails in `backend/tests/test_sandbox.py` document the P1-S2
+sandbox gap; when the sandbox lands they XPASS, `xfail_strict` turns that into a
+failure, and you must delete the markers in the same PR. Do not "fix" this by
+removing `strict` — the whole point is that a closed gap cannot be left
+undocumented.
+
+**A permanently red gate teaches people to ignore CI.** Two gates are therefore
+deliberately non-blocking and both are ratchets, not aspirations: coverage
+(`fail_under = 35` against a measured 35.73, target 70 at P1-T1) and the Dart
+style checks (`dart format`, `analyze --fatal-infos`, P1-T5). Raise a ratchet in
+the same PR that earns it; never lower one. `flutter analyze --fatal-warnings`
+*is* blocking, because errors and warnings mean broken code — only style is
+deferred.
+
 ---
 
 ## 7. Testing expectations

@@ -399,17 +399,41 @@ Certificate renewal: 90-day validity, automatic rotation, with the new
 fingerprint pushed to already-paired devices over the existing authenticated
 channel. Only a *new* pairing needs the out-of-band comparison.
 
-**Client-side compensating control (ships before TLS):**
+**Client-side compensating control — SHIPPED.** This was a sketch in the first
+draft of this plan. It is now implemented in `mobile_app/lib/services/api_service.dart`
+as `isPermittedTarget` / `assertPrivateTarget` / `assertPrivateUri`, enforced
+through `_baseUrl(ip)`, which is the single choke point for all ~60 endpoint
+wrappers. Tested by `mobile_app/test/api_service_test.dart`. See
+[`../AUDIT.md`](../AUDIT.md) · F-11b for why it mattered that this shipped: the
+network security config's comment already claimed the guard existed, so global
+cleartext permission was live with no compensation.
+
+The policy, stated precisely:
 
 ```dart
-/// Refuses an HTTP request to any non-private destination.
+/// Cleartext HTTP only to a private host; TLS to anywhere.
 ///
 /// Android's network_security_config matches hostnames only — it has no CIDR
 /// syntax — so the cleartext exception cannot be scoped to RFC1918
 /// declaratively. This is the compensating control until P2-S1 lands, after
-/// which the config flips to cleartextTrafficPermitted="false".
-void assertPrivateTarget(Uri uri) { … }
+/// which the config flips to cleartextTrafficPermitted="false" and this becomes
+/// defence in depth.
+static bool isPermittedTarget(String host);   // loopback, link-local, RFC1918,
+                                              // IPv6 ULA, localhost, *.local
+static void assertPrivateTarget(String host); // throws PrivateNetworkRequiredException
+static void assertPrivateUri(Uri uri);        // http -> private only; https -> any host
 ```
+
+Two deliberate exclusions, both fail-closed:
+
+- **CGNAT `100.64.0.0/10` is refused.** It is carrier infrastructure, not a LAN;
+  permitting it would send a paired token in cleartext across an ISP network.
+- **Routable hostnames are refused without resolving them.** Classifying a
+  hostname needs a DNS lookup, and the lookup itself leaks the destination the
+  guard is trying to protect. Refuse, and let TLS handle remote nodes.
+
+`assertPrivateUri` allowing any `https:` host is what keeps the GitHub release
+check in `update_service.dart` working — that request is legitimately public.
 
 ### 4.3 IP rotation
 

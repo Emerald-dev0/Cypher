@@ -59,7 +59,12 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
     if (_previewUrlCached == null) return;
     setState(() => _loadingText = true);
     try {
-      final res = await http.get(Uri.parse(_previewUrlCached!)).timeout(const Duration(seconds: 15));
+      // The preview URL comes from the node, so its host is not something this
+      // screen chose. Re-validate it before fetching: the node's answer is
+      // trusted for the path, not for the destination.
+      final previewUri = Uri.parse(_previewUrlCached!);
+      ApiService.assertPrivateUri(previewUri);
+      final res = await http.get(previewUri).timeout(const Duration(seconds: 15));
       if (mounted) setState(() => _textContent = res.statusCode == 200 ? res.body : 'Preview unavailable.');
     } catch (_) {
       if (mounted) setState(() => _textContent = 'Preview unavailable.');

@@ -15,10 +15,115 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Thrown when a call would send credentials or cleartext traffic to a
+/// destination outside the local network.
+///
+/// Subclasses [ApiException] so it is handled by the existing error paths: every
+/// caller already has to cope with [ApiException] because [_handleResponse]
+/// throws it for any non-2xx status.
+class PrivateNetworkRequiredException extends ApiException {
+  final String host;
+  PrivateNetworkRequiredException(this.host)
+      : super(
+          'Refusing to contact "$host" over cleartext HTTP. CYPHER only talks to '
+          'a node on your local network. Public and internet destinations '
+          'require TLS (roadmap P2-S1).',
+        );
+}
+
 class ApiService {
   ApiService._();
 
-  static String _baseUrl(String ip) => 'http://$ip:5000';
+  // ── Private-network enforcement ───────────────────────────────
+  //
+  // WHY THIS EXISTS
+  // ───────────────
+  // android/app/src/main/res/xml/network_security_config.xml sets
+  // cleartextTrafficPermitted="true" globally, because Android's network
+  // security config matches on *hostnames only* — it has no CIDR or IP-range
+  // syntax, so the exception cannot be scoped to RFC1918 declaratively.
+  //
+  // Permitting cleartext globally with no compensation would mean a paired token
+  // (sent as X-Auth-Token) could travel in plaintext to any host on the internet
+  // if the stored address were ever replaced — by a bug, a malicious QR code, a
+  // compromised mDNS response, or a user pasting a public IP. That file's
+  // comment names this function as the compensating control; before this commit
+  // the function did not exist, so the control was missing entirely.
+  //
+  // This is defence in depth, not the primary control. TLS (P2-S1) is the real
+  // fix and will let cleartextTrafficPermitted flip to false.
+
+  /// Whether [host] is a destination this app may contact over cleartext HTTP.
+  ///
+  /// Permitted: IPv4 loopback/link-local/RFC1918, IPv6 loopback/link-local/ULA
+  /// (fc00::/7), `localhost`, and mDNS `.local` names — which are
+  /// link-local-scoped by definition and are how DiscoveryService finds nodes.
+  ///
+  /// Everything else is refused. Note what is deliberately NOT permitted:
+  /// CGNAT (100.64.0.0/10) is carrier infrastructure rather than a LAN, and a
+  /// public hostname is exactly the case this guard exists to stop.
+  static bool isPermittedTarget(String host) {
+    final normalized = host.trim().toLowerCase().replaceAll(RegExp(r'^\[|\]$'), '');
+    if (normalized.isEmpty) return false;
+
+    if (normalized == 'localhost') return true;
+    // mDNS names resolve only within the local link.
+    if (normalized.endsWith('.local')) return true;
+
+    final addr = InternetAddress.tryParse(normalized);
+    if (addr == null) {
+      // Not an IP literal and not an mDNS name. A routable hostname would need
+      // DNS resolution to classify, and resolving it here would leak the query;
+      // refuse instead and let TLS handle remote nodes.
+      return false;
+    }
+
+    if (addr.isLoopback || addr.isLinkLocal) return true;
+
+    final bytes = addr.rawAddress;
+
+    if (addr.type == InternetAddressType.IPv4 && bytes.length == 4) {
+      if (bytes[0] == 10) return true; // 10.0.0.0/8
+      if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) {
+        return true; // 172.16.0.0/12
+      }
+      if (bytes[0] == 192 && bytes[1] == 168) return true; // 192.168.0.0/16
+      return false;
+    }
+
+    if (addr.type == InternetAddressType.IPv6 && bytes.length == 16) {
+      // fc00::/7 — unique local addresses, the IPv6 analogue of RFC1918.
+      return bytes[0] == 0xfc || bytes[0] == 0xfd;
+    }
+
+    return false;
+  }
+
+  /// Throws [PrivateNetworkRequiredException] unless [host] is on the local
+  /// network. Called by [_baseUrl], which every request in this class goes
+  /// through, so there is exactly one place to get this right.
+  static void assertPrivateTarget(String host) {
+    if (!isPermittedTarget(host)) {
+      throw PrivateNetworkRequiredException(host);
+    }
+  }
+
+  /// The policy actually intended by network_security_config.xml, expressed for a
+  /// parsed [Uri]: **cleartext HTTP only to a private host; TLS to anywhere.**
+  ///
+  /// Use this wherever a URL is built or consumed outside [_baseUrl] — guest
+  /// share links, preview/thumbnail URLs handed to [Image.network], and any
+  /// future WebView target. An `https:` URI is permitted regardless of host,
+  /// which is why the GitHub release check in `update_service.dart` is unaffected.
+  static void assertPrivateUri(Uri uri) {
+    if (uri.scheme != 'http') return;
+    assertPrivateTarget(uri.host);
+  }
+
+  static String _baseUrl(String ip) {
+    assertPrivateTarget(ip);
+    return 'http://$ip:5000';
+  }
 
   static Future<Map<String, String>> _headers({bool withToken = true}) async {
     final headers = <String, String>{'Content-Type': 'application/json'};

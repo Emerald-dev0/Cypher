@@ -72,8 +72,9 @@ source at all — default copyright, all rights reserved.
   job that fails if any of these patterns reappear in `git ls-files`.
 - **Keystore support for Android release builds**, with `key.properties.example`
   and a CI assertion that release artefacts are not debug-signed.
-- **Android network security config** permitting cleartext only to RFC 1918 and
-  link-local ranges, `allowBackup="false"`, and data-extraction rules.
+- **Android network security config** (`allowBackup="false"`, data-extraction
+  rules) plus the client-side private-network guard that makes its global
+  cleartext permission safe — see F-11b under Security below.
 
 ### Changed
 
@@ -191,8 +192,9 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
-Four findings in this category were discovered *by writing the tests*, not by
-reading the code — which is the strongest argument for P1-T1.
+Five findings in this category were discovered *by writing the tests or by
+chasing a comment to the code it described*, not by reading the code top to
+bottom — which is the strongest argument for P1-T1.
 
 - **S-01b — the new per-install token was printed to stdout.** `__main__` did
   `print(f"INTERNAL BYPASS TOKEN: {INTERNAL_TOKEN}")` and
@@ -227,6 +229,24 @@ reading the code — which is the strongest argument for P1-T1.
   session from its list, and the guest kept full file access until natural expiry.
   The worst possible failure shape: **the host believes a third party has been cut
   off, the UI confirms it, and they have not been.**
+- **F-11b — the private-network guard the Android config relied on did not
+  exist.** `network_security_config.xml` permits cleartext HTTP *globally*,
+  because Android's network security config matches hostnames only and has no
+  CIDR syntax to scope it to RFC1918. Its comment named `assertPrivateTarget` in
+  `api_service.dart` as the compensating control — **that function did not
+  exist**, so the app would send a paired token in plaintext to any host on the
+  internet if the stored address were ever replaced. A documented-but-absent
+  control is worse than an undocumented gap: it stops the next reader looking.
+  Now implemented as `isPermittedTarget` / `assertPrivateTarget` /
+  `assertPrivateUri`, enforced through `_baseUrl(ip)` — the single choke point
+  for all ~60 endpoint wrappers. Policy: **cleartext only to a private host, TLS
+  to anywhere**, which is why the GitHub release check keeps working. CGNAT
+  (`100.64.0.0/10`) and routable hostnames are refused, the latter without
+  resolving them because the DNS query would itself leak the destination. Two
+  call sites bypassed `_baseUrl` and are now covered: `drop_zone_screen.dart`
+  builds a guest share URL directly (that link goes to a third party carrying a
+  guest token in cleartext) and `file_preview_screen.dart` fetches a URL the
+  *node* returned. 39 assertions in `mobile_app/test/api_service_test.dart`.
 - **S-15 (partial) — keystroke content is no longer logged.** `/type` recorded
   `f"Typed: {request.json.get('text','')[:20]}"` into a log persisted to disk and
   rendered in the Activity tab — a plaintext credential store the user never
@@ -287,6 +307,16 @@ Tracked in [`docs/AUDIT.md`](docs/AUDIT.md) with roadmap task IDs. The headline:
 - **`syncfusion_flutter_pdfviewer` is Apache-2.0-incompatible** — P1-B9.
 - **Git history still contains the committed secrets and the 78 MB of build
   output** — P1-B1.
+- **The Dart changes in this pass are uncompiled.** This sandbox has no
+  Flutter/Dart toolchain, so `assertPrivateTarget`, the three new Dart test files
+  and the `backend_manager.dart`/`update_service.dart` fixes could not be built
+  or run. They are pure Dart with no new dependencies and were checked
+  structurally (bracket balance, single definitions, no unresolved doc
+  references), but CI's `flutter analyze --fatal-warnings` and `flutter test` are
+  the real gate. Deliberately **not** attempted: adding `package_info_plus` to fix
+  the version drift (A-05), because that requires regenerating `pubspec.lock`,
+  which CI verifies is committed and current and which cannot be produced without
+  `flutter pub get`.
 
 ---
 

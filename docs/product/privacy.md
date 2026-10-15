@@ -232,7 +232,7 @@ UAC automatically on first run; that is being removed (P2-S4).
 
 No third party receives your data, because no data is sent.
 
-The dependencies CYPHER is *built from* are listed in [`../NOTICE`](../NOTICE).
+The dependencies CYPHER is *built from* are listed in [`NOTICE`](../../NOTICE).
 Building with a library is not the same as sending it data. The two external
 services a build may contact are GitHub (update check, if you initiate it) and
 your chosen relay (if you configure one).
@@ -258,7 +258,7 @@ What you *can* do:
 
 If you are an organisation evaluating CYPHER: it is designed to be usable in
 air-gapped and regulated environments precisely because there is no cloud
-component. See [`product/features-and-applications.md`](product/features-and-applications.md) §2.2.
+component. See [`features-and-applications.md`](features-and-applications.md) §2.2.
 
 ---
 
@@ -267,7 +267,7 @@ component. See [`product/features-and-applications.md`](product/features-and-app
 Any change to what leaves a device requires this document to be updated **in the
 same pull request**, and is treated as a breaking change for the purposes of the
 changelog. The rule is enforced socially today and by review checklist
-([`../.github/pull_request_template.md`](../.github/pull_request_template.md));
+([`.github/pull_request_template.md`](../../.github/pull_request_template.md));
 the CI dependency gate covers the automated part.
 
 **Last reviewed:** 2026-10-15

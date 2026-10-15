@@ -722,8 +722,52 @@ mechanism behind "works on my phone in debug, fails for everyone else."
 **Fix applied:** `res/xml/network_security_config.xml` added and referenced from
 the manifest. Note the documented limitation: Android matches hostnames only and
 has **no CIDR syntax**, so the cleartext exception cannot be scoped to RFC1918
-declaratively. The config comments say so explicitly and point at the client-side
-`assertPrivateTarget` guard (P2-S1) and the TLS migration (Phase S2).
+declaratively — cleartext is therefore permitted *globally* and must be
+compensated for in the transport layer.
+
+**F-11b — the compensating control did not exist. · FIXED.** The config comment
+pointed at `assertPrivateTarget` in `api_service.dart` as the thing making global
+cleartext acceptable. **That function did not exist.** So the app permitted
+cleartext HTTP to any host on the internet with nothing enforcing private-only —
+the exact risk the comment claimed was handled. A documented-but-absent control
+is worse than an undocumented gap, because it stops the next reader looking.
+
+Now implemented in `ApiService`:
+
+- `isPermittedTarget(host)` — pure function. Allows IPv4 loopback / link-local /
+  RFC1918, IPv6 loopback / link-local / ULA (`fc00::/7`), `localhost`, and mDNS
+  `.local` names (which are link-local scoped by definition and are how
+  `DiscoveryService` finds nodes). Refuses everything else, **including CGNAT
+  `100.64.0.0/10`** — carrier infrastructure is not a LAN — and refuses any
+  routable hostname rather than resolving it, because the DNS query would itself
+  leak the destination.
+- `assertPrivateTarget(host)` — throws `PrivateNetworkRequiredException`, a
+  subclass of `ApiException`, so it is caught by the existing error paths. Every
+  caller already copes with `ApiException` because `_handleResponse` throws it for
+  any non-2xx status; no new error handling was needed anywhere.
+- `assertPrivateUri(uri)` — the real policy for a parsed URI: **cleartext only to
+  a private host, TLS to anywhere.** That is why the GitHub release check in
+  `update_service.dart` is unaffected.
+
+`_baseUrl(ip)` is the single choke point for all ~60 endpoint wrappers, so the
+guard is enforced in exactly one place. Two call sites bypassed it and are now
+covered: `drop_zone_screen.dart` builds a guest share URL directly (the most
+important one — that link is handed to a third party and carries a guest token in
+cleartext), and `file_preview_screen.dart` fetches a URL the *node* returned, so
+the destination is re-validated rather than trusted.
+
+Covered by `mobile_app/test/api_service_test.dart` — 39 assertions including the
+`172.16.0.0/12` boundaries (`172.15.255.255` and `172.32.0.1` must both be
+refused), malformed input failing closed, and a public host hidden in a query
+string not being mistaken for the destination.
+
+⚠️ **Not verifiable in this sandbox** — there is no Flutter/Dart toolchain, so
+these Dart changes are uncompiled. They are pure Dart with no new dependencies
+and were checked structurally; `flutter analyze --fatal-warnings` and
+`flutter test` in CI are the real gate.
+
+TLS (P2-S1) remains the actual fix, after which `cleartextTrafficPermitted`
+flips to `false` and this guard becomes belt-and-braces.
 
 ---
 

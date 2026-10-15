@@ -5,7 +5,7 @@
 | If you are… | Read |
 | --- | --- |
 | A **user** trying to install and pair | [`README.md`](../README.md) |
-| A **user** whose connection is not working | [`product/troubleshooting.md`](product/troubleshooting.md) *(P1-C3)* |
+| A **user** whose connection is not working | `product/troubleshooting.md` — **not written yet (P1-C3)**; until then use [`AUDIT.md`](AUDIT.md) §8 and [`plans/test-matrix.md`](plans/test-matrix.md) |
 | A **contributor** about to open a PR | [`AGENTS.md`](../AGENTS.md), then [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | A **maintainer** cutting a release | [`RELEASES.md`](RELEASES.md) |
 | Someone who found a **vulnerability** | [`SECURITY.md`](../SECURITY.md) — private channel, not an issue |
@@ -64,7 +64,7 @@ Why the product is the way it is.
 | [`product/privacy.md`](product/privacy.md) | Exactly what data exists, where it lives, and what leaves the device. Feeds the Play Store Data Safety form |
 | [`product/positioning.md`](product/positioning.md) | The one-sentence product, the two properties that must not be traded away |
 | [`product/branding.md`](product/branding.md) | Name, logo, marks, and the fork-rebranding requirement under Apache-2.0 |
-| `product/troubleshooting.md` | Connection and setup help — **P1-C3**, not yet written |
+| `product/troubleshooting.md` | Connection and setup help — **P1-C3, not yet written.** Deliberately not linked from anywhere until it exists: the CI `docs` job fails on a relative link to a missing file, so a planned document must be named as text, not linked. |
 
 ---
 
