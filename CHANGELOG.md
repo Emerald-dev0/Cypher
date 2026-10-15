@@ -223,6 +223,17 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
+- **The private-network guard refused a valid link-local range.**
+  `ApiService.isPermittedTarget` classified loopback and link-local by delegating
+  to `InternetAddress.isLoopback` / `isLinkLocal`, and the SDK helper disagreed
+  with RFC 4291: `febf::1` was refused even though `fe80::/10` spans `fe80::`
+  through `febf::`. Classification is now done on the raw bytes for both address
+  families, with every permitted prefix written out against its RFC. This is the
+  dangerous direction to fail — refusing a legitimate link-local peer surfaces as
+  "the PC will not pair", which nobody would trace to a two-bit prefix. Verified by
+  reimplementing the byte logic in Python and comparing it against the `ipaddress`
+  module, exhaustively across all 256 second bytes of `fe??::1`. (Audit F-11c)
+
 Five findings in this category were discovered *by writing the tests or by
 chasing a comment to the code it described*, not by reading the code top to
 bottom — which is the strongest argument for P1-T1.

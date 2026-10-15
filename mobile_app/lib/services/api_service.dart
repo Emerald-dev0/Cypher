@@ -78,11 +78,22 @@ class ApiService {
       return false;
     }
 
-    if (addr.isLoopback || addr.isLinkLocal) return true;
-
     final bytes = addr.rawAddress;
 
+    // Every classification below is done on the raw bytes on purpose.
+    //
+    // This originally delegated to `addr.isLoopback || addr.isLinkLocal`, and
+    // that was wrong: `febf::1` was refused even though fe80::/10 spans fe80::
+    // through febf:: — the second byte may be anything from 0x80 to 0xBF once the
+    // first ten bits are fixed. The SDK helpers are not a specification, and this
+    // function decides whether an auth token may be sent in cleartext, so
+    // "checkable against RFC 4291 / RFC 1918 by reading the code" beats "trust the
+    // helper". It is also the only way to test this without a device.
     if (addr.type == InternetAddressType.IPv4 && bytes.length == 4) {
+      if (bytes[0] == 127) return true; // 127.0.0.0/8 loopback
+      if (bytes[0] == 169 && bytes[1] == 254) {
+        return true; // 169.254.0.0/16 link-local
+      }
       if (bytes[0] == 10) return true; // 10.0.0.0/8
       if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) {
         return true; // 172.16.0.0/12
@@ -92,8 +103,24 @@ class ApiService {
     }
 
     if (addr.type == InternetAddressType.IPv6 && bytes.length == 16) {
+      // ::1 — the first fifteen bytes are zero and the last is one.
+      var loopback = true;
+      for (var i = 0; i < 15; i++) {
+        if (bytes[i] != 0) {
+          loopback = false;
+          break;
+        }
+      }
+      if (loopback && bytes[15] == 1) return true;
+
+      // fe80::/10 link-local. Ten fixed bits means the second byte ranges over
+      // 0x80..0xBF, not just 0x80 — this is the case the SDK helper got wrong.
+      if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) return true;
+
       // fc00::/7 — unique local addresses, the IPv6 analogue of RFC1918.
-      return bytes[0] == 0xfc || bytes[0] == 0xfd;
+      if (bytes[0] == 0xfc || bytes[0] == 0xfd) return true;
+
+      return false;
     }
 
     return false;

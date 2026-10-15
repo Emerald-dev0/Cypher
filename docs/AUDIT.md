@@ -1069,13 +1069,63 @@ Covered by `mobile_app/test/api_service_test.dart` — 39 assertions including t
 refused), malformed input failing closed, and a public host hidden in a query
 string not being mistaken for the destination.
 
-⚠️ **Not verifiable in this sandbox** — there is no Flutter/Dart toolchain, so
-these Dart changes are uncompiled. They are pure Dart with no new dependencies
-and were checked structurally; `flutter analyze --fatal-warnings` and
-`flutter test` in CI are the real gate.
+**Verification status, updated.** This was originally recorded as unverifiable —
+no Flutter/Dart toolchain in this sandbox — and that caveat did its job: it
+flagged the change as unproven. It has since been proven, and the proving found a
+bug (F-11c). `flutter analyze --fatal-warnings` passes and `flutter test` runs the
+suite in CI. Nothing here should be treated as uncompiled any more.
 
 TLS (P2-S1) remains the actual fix, after which `cleartextTrafficPermitted`
 flips to `false` and this guard becomes belt-and-braces.
+
+**F-11c — the guard refused a valid link-local range, because it trusted an SDK
+helper instead of the RFC. · FIXED.** `isPermittedTarget` classified loopback and
+link-local with `addr.isLoopback || addr.isLinkLocal`. CI's first run of
+`flutter test` failed exactly one of 36 tests, in the group *loopback and
+link-local are permitted*: `Expected: true, Actual: <false>`.
+
+The address was `febf::1`. **fe80::/10 spans `fe80::` through `febf::`** — ten
+fixed bits means the second byte may be anything from `0x80` to `0xBF`, and
+`0xbf & 0xc0 == 0x80`. So `febf::1` is link-local by RFC 4291 and must be
+permitted. The SDK helper disagreed with the RFC.
+
+This matters more than a boundary case suggests, because it is the *failing-closed
+in the wrong direction* variant: refusing a legitimate link-local peer breaks
+discovery on any node that happens to draw an address above `fe80::/16`, and the
+failure looks like "the PC will not pair" rather than "a security check is too
+strict". Nobody would have traced that to a two-bit prefix.
+
+Fixed by classifying **on the raw bytes** for both families, with every prefix
+written out against its RFC:
+
+| Family | Permitted | Range |
+| --- | --- | --- |
+| IPv4 | `127.0.0.0/8` | loopback |
+| IPv4 | `169.254.0.0/16` | link-local |
+| IPv4 | `10/8`, `172.16/12`, `192.168/16` | RFC 1918 |
+| IPv6 | `::1` | loopback — first 15 bytes zero, last byte one |
+| IPv6 | `fe80::/10` | link-local — `bytes[0]==0xfe && (bytes[1] & 0xc0)==0x80` |
+| IPv6 | `fc00::/7` | unique local, the RFC 1918 analogue |
+
+`InternetAddress.isLoopback` / `isLinkLocal` are no longer called at all. For a
+function that decides whether an auth token may travel in cleartext, code that can
+be checked against the RFC by reading it beats delegating to a helper whose
+semantics cannot be tested locally — and this is now a pure function of bytes,
+with no platform-dependent behaviour.
+
+Verified two ways, because the Dart toolchain is still unavailable:
+1. The byte logic was reimplemented in Python and compared against the `ipaddress`
+   module for 24 named cases, including the `172.16.0.0/12` boundaries
+   (`172.15.255.255` and `172.32.0.1` must both be refused) and CGNAT
+   (`100.64.0.1`, which is *not* a LAN).
+2. **Exhaustively** over all 256 possible second bytes of `fe??::1` against the
+   real `fe80::/10` network, which is what actually pins the boundary that was
+   wrong.
+
+Tests added for the adjacent ranges that a hand-rolled prefix check is most likely
+to get wrong: `fec0::1` (the retired site-local range, two bits from `fe80::/10`),
+`fe00::1`, `ff02::1` (multicast is not a peer), and `::2` (only `::1` is
+loopback).
 
 ### 🔴 F-12 — The mobile app does not compile · **FIXED**
 

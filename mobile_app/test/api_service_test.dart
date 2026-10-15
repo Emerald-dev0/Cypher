@@ -71,7 +71,23 @@ void main() {
     test('IPv6 loopback and link-local', () {
       expect(permitted('::1'), isTrue);
       expect(permitted('fe80::1'), isTrue);
+      // fe80::/10 spans fe80:: through febf::. `febf::1` is the upper boundary and
+      // is the exact address the SDK's InternetAddress.isLinkLocal refused, which
+      // is why this function classifies on raw bytes instead.
       expect(permitted('febf::1'), isTrue);
+      expect(permitted('fe80::abcd:1234'), isTrue);
+    });
+
+    test('IPv6 addresses adjacent to link-local are refused', () {
+      // fec0::/10 is the retired site-local range. It differs from fe80::/10 by
+      // two bits, so it is the boundary most likely to be got wrong by a
+      // hand-rolled prefix check — and permitting it would treat a routable
+      // address as local.
+      expect(permitted('fec0::1'), isFalse);
+      expect(permitted('fe00::1'), isFalse);
+      expect(permitted('ff02::1'), isFalse, reason: 'multicast is not a peer');
+      // ::2 is not loopback; only ::1 is.
+      expect(permitted('::2'), isFalse);
     });
 
     test('IPv6 unique-local fc00::/7', () {
