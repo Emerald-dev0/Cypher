@@ -46,8 +46,12 @@
 # dependency just to satisfy a shrinker, and we do not want to keep classes
 # that are not there. The engine already degrades to "deferred components are
 # unavailable" when SplitInstallManager is missing at runtime.
--dontwarn com.google.android.play.core.splitinstall.**
--dontwarn com.google.android.play.core.splitcompat.**
+# The whole Play Core tree, not individual subpackages. The first pass covered
+# splitinstall and splitcompat; the next R8 run then failed on
+# `com.google.android.play.core.tasks.{Task,OnSuccessListener,OnFailureListener}`
+# from the same Flutter embedding class. Playing whack-a-mole with subpackages
+# costs a seven-minute CI cycle per remaining class.
+-dontwarn com.google.android.play.core.**
 
 # Kotlin metadata
 -keep class kotlin.Metadata { *; }
