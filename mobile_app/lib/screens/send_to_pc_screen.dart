@@ -205,6 +205,14 @@ class _SendToPCScreenState extends State<SendToPCScreen> {
                   const Text('Destination folder', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CypherColors.textSecondary)),
                   const SizedBox(height: 8),
 
+                  // `_loadingFolders` and `_browsingFolders` were assigned in four
+                  // places and read in none — the fetches gave no feedback at all.
+                  if (_loadingFolders || _browsingFolders)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+
                   // Show folder browser if browsing, otherwise show quick selections
                   if (_subfolders.isNotEmpty)
                     CypherCard(

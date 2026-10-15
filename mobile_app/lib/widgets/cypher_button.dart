@@ -3,7 +3,11 @@ import 'package:flutter/services.dart';
 import '../theme/colors.dart';
 import '../theme/app_theme.dart';
 
-enum CypherButtonVariant { primary, secondary, ghost, danger }
+/// `success` exists because `controls_screen.dart` reached for a green
+/// confirm button by passing a `style:` parameter this widget never had —
+/// a compile error, not a styling preference. Colours belong in the
+/// variant, so the design system stays the only place that knows them.
+enum CypherButtonVariant { primary, secondary, ghost, danger, success }
 
 class CypherButton extends StatefulWidget {
   final String label;
@@ -65,6 +69,7 @@ class _CypherButtonState extends State<CypherButton>
       CypherButtonVariant.secondary => (CypherColors.bgCard, CypherColors.textPrimary, CypherColors.border),
       CypherButtonVariant.ghost     => (Colors.transparent, CypherColors.textSecondary, Colors.transparent),
       CypherButtonVariant.danger    => (CypherColors.errorDim, CypherColors.error, CypherColors.error.withOpacity(0.3)),
+      CypherButtonVariant.success   => (CypherColors.successDim, CypherColors.success, CypherColors.success.withOpacity(0.3)),
     };
 
     return GestureDetector(

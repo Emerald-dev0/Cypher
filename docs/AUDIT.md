@@ -62,21 +62,21 @@ three S-13 sub-bugs) and corrected one (S-03). S-19 was added later, when the
 
 | Severity | Count | Definition |
 | --- | --- | --- |
-| 🔴 Critical | 13 | Blocks public release; security exposure or total feature failure |
-| 🟠 High | 14 | Breaks a shipped feature, a platform, or the release pipeline |
+| 🔴 Critical | 14 | Blocks public release; security exposure or total feature failure |
+| 🟠 High | 15 | Breaks a shipped feature, a platform, or the release pipeline |
 | 🟡 Medium | 12 | Correctness, maintainability or professionalism defects |
 | 🔵 Low | 1 | Hygiene, polish, documentation drift |
-| **Total** | **40** | |
+| **Total** | **42** | |
 
 ### Status after this pass
 
 | | Found | Fixed | Partially fixed | Deferred to roadmap |
 | --- | --- | --- | --- | --- |
-| 🔴 Critical | 13 | **11** | 1 | 1 |
-| 🟠 High | 14 | **5** | 2 | 7 |
+| 🔴 Critical | 14 | **12** | 1 | 1 |
+| 🟠 High | 15 | **6** | 2 | 7 |
 | 🟡 Medium | 12 | **4** | 2 | 6 |
 | 🔵 Low | 1 | **1** | 0 | 0 |
-| **Total** | **40** | **21** | **5** | **14** |
+| **Total** | **42** | **23** | **5** | **14** |
 
 **Exactly one critical finding remains open: S-03, the paired-device filesystem
 sandbox (P1-S2).** Everything else critical is fixed or partially fixed. That is
@@ -1076,6 +1076,67 @@ and were checked structurally; `flutter analyze --fatal-warnings` and
 
 TLS (P2-S1) remains the actual fix, after which `cleartextTrafficPermitted`
 flips to `false` and this guard becomes belt-and-braces.
+
+### 🔴 F-12 — The mobile app does not compile · **FIXED**
+
+Four analyzer **errors** — not warnings — were sitting in `mobile_app/lib`, which
+means `flutter build apk` could not have succeeded:
+
+| Location | Error | Cause |
+| --- | --- | --- |
+| `screens/home_screen.dart:202, 248, 317` | `The name 'SliverSizedBox' isn't a class` | The class **never existed**. Verified against the base commit: `git grep SliverSizedBox 8f52695 -- '*.dart'` returns the same three *call sites* and no definition. Flutter ships no such widget, and no dependency provides one. |
+| `screens/controls_screen.dart:176` | `The named parameter 'style' isn't defined` | `CypherButton` takes a `variant` enum; there is no `style` parameter and never was. |
+
+`HomeScreen` is routed from `main.dart`, so this is not a dead file that happens
+not to compile — it is the app's home screen. **The mobile app has therefore never
+been built from this source tree**, which reframes several other findings: the
+committed `build/` output that was purged (~78 MB) cannot have come from this
+`lib/`, and the absence of any iOS/macOS platform work (S-*cross-platform* table)
+is consistent with an app that was never compiled rather than one that was
+compiled and then neglected.
+
+Fixed:
+
+- Added `widgets/sliver_sized_box.dart` — a nine-line `SliverToBoxAdapter` wrapper,
+  which is what the three call sites meant. Defining it keeps them untouched and
+  is the idiom other Flutter codebases use; replacing them inline would have
+  tripled the diff for no benefit.
+- Added `CypherButtonVariant.success` and its arm in the colour `switch`
+  expression, using the existing `CypherColors.success` / `successDim` tokens.
+  `controls_screen.dart` now asks for the variant instead of passing a raw
+  `ElevatedButton.styleFrom`. The colour lives in the design system, not at the
+  call site — which is the whole point of A-08.
+
+⚠️ Found only because the blocking analyzer gate ran for the first time, and only
+*fully* found because S-18g made that step report an authoritative count.
+
+### 🟠 F-13 — Upload progress was wired end-to-end except for the middle · **FIXED**
+
+`ApiService.downloadFile` invoked its `onProgress` callback correctly.
+`ApiService.uploadFile` and `ApiService.uploadToDrop` both **accepted an
+`onProgress` parameter and never called it**, and both used
+`http.MultipartFile.fromPath`, which streams the file without exposing any byte
+count.
+
+Two callers passed real callbacks — `providers/file_provider.dart:157` and
+`screens/drop_zone_screen.dart:78` — so both wired up progress UI that was
+guaranteed never to move. The tell was in the dead locals the analyzer flagged:
+`uploadFile` computed `fileSize` and `fileName` and then used neither, because
+they exist precisely to report progress.
+
+Fixed by streaming the file through a counting `http.ByteStream` built from
+`file.openRead()`, which consumes both locals and fires the callback. This is the
+only way to get upload progress out of `package:http`; `MultipartFile.fromPath`
+cannot report it at all.
+
+**Honest limitation:** the counter reports bytes handed to the HTTP layer, not
+bytes acknowledged on the wire, so the bar runs slightly ahead of the network and
+reaches 100 % before the server responds. That is documented at the call site.
+Accurate progress needs `dio` or a custom sink and belongs with the transfer queue
+in `docs/plans/features-and-applications.md`, not here.
+
+Both uploads were changed together because they had the identical defect and a fix
+to only one would have left the drop-zone screen lying to its user.
 
 ---
 

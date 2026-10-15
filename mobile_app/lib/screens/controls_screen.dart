@@ -173,9 +173,7 @@ class _ControlsScreenState extends State<ControlsScreen> {
                           child: CypherButton(
                             label: 'Save',
                             onTap: _saveScreenshot,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: CypherColors.success,
-                            ),
+                            variant: CypherButtonVariant.success,
                           ),
                         ),
                       ],

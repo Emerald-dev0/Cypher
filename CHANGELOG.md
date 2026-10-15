@@ -178,9 +178,29 @@ source at all — default copyright, all rights reserved.
   code behaved exactly as documented. Now keyed on `os.name`, matching the idiom
   `test_sandbox.py` already used. The underlying Windows gap is recorded as audit
   S-19 and tracked as P3-L7.
-- **Four `flutter analyze` warnings in `mobile_app`** — three unused imports and a
-  dead field (`_lastLifecycleState`, assigned and never read). Surfaced only when
-  the blocking analyzer gate ran for the first time; `pc_app_flutter` was clean.
+- **The mobile app did not compile.** Four analyzer *errors*, found only when the
+  blocking `flutter analyze` gate ran for the first time:
+  `screens/home_screen.dart` used `SliverSizedBox` in three places and that class
+  has never existed anywhere in the project — confirmed against the base commit,
+  where the same three call sites appear with no definition — and
+  `screens/controls_screen.dart` passed a `style:` parameter that `CypherButton`
+  does not accept. `HomeScreen` is routed from `main.dart`, so `flutter build apk`
+  could not have succeeded. Added `widgets/sliver_sized_box.dart` and a
+  `CypherButtonVariant.success` that uses the existing colour tokens. (Audit F-12)
+- **Upload progress could never move.** `ApiService.uploadFile` and `uploadToDrop`
+  both accepted an `onProgress` callback and never invoked it, using
+  `MultipartFile.fromPath`, which exposes no byte count — while `downloadFile`
+  reported progress correctly. Two callers wired up progress UI that was
+  guaranteed to sit at zero. Both now stream through a counting
+  `http.ByteStream`. Reported bytes are those handed to the HTTP layer rather than
+  acknowledged on the wire, so the bar runs slightly ahead; that is documented at
+  the call site. (Audit F-13)
+- **Eleven more `flutter analyze` findings in `mobile_app`** — four further unused
+  `app_theme.dart` imports, three write-only state fields, and two locals computed
+  for the progress reporting above. `_loadingFolders` and `_browsingFolders` were
+  assigned in four places and read in none, so folder fetches gave no feedback;
+  they now drive a `LinearProgressIndicator`. `_savedPath` was dead and is removed.
+  `pc_app_flutter` produced zero findings from the same gate.
 - **Android release builds were blocked from the LAN** — Android 9+ rejects
   cleartext HTTP, and debug/profile builds are silently exempted by the Flutter
   tooling while release builds are not. This is the classic "works in debug, fails

@@ -380,8 +380,29 @@ class ApiService {
     final uri = Uri.parse('${_baseUrl(ip)}/files/upload');
     final request = http.MultipartRequest('POST', uri)
       ..headers['X-Auth-Token'] = token ?? ''
-      ..fields['destination'] = destination
-      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+      ..fields['destination'] = destination;
+
+    // `fileSize` and `fileName` were computed above and never used, and
+    // `onProgress` was accepted and never invoked — while `downloadFile` did
+    // invoke its own callback. Two callers (`file_provider`, `drop_zone_screen`)
+    // therefore wired up progress UI that could never move. Streaming the file
+    // through a counting `ByteStream` fixes all three at once and is what those
+    // two locals were always for.
+    //
+    // `sent` counts bytes handed to the HTTP layer, not bytes acknowledged on the
+    // wire, so this runs slightly ahead of the network. Good enough for a
+    // progress bar, and better than one that stays at zero.
+    var sent = 0;
+    request.files.add(http.MultipartFile(
+      'file',
+      http.ByteStream(file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(sent, fileSize);
+        return chunk;
+      })),
+      fileSize,
+      filename: fileName,
+    ));
 
     final streamedRes = await request.send().timeout(const Duration(minutes: 60));
     final res = await http.Response.fromStream(streamedRes);
@@ -728,11 +749,29 @@ class ApiService {
     void Function(int sent, int total)? onProgress,
   }) async {
     final token = await StorageService.getToken();
+    final file = File(filePath);
+    final fileSize = await file.length();
+    final fileName = p.basename(filePath);
+
     final uri = Uri.parse('${_baseUrl(ip)}/files/upload');
     final request = http.MultipartRequest('POST', uri)
       ..headers['X-Auth-Token'] = token ?? ''
-      ..fields['destination'] = 'CypherDrop'
-      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+      ..fields['destination'] = 'CypherDrop';
+
+    // Same defect as `uploadFile`: `onProgress` was declared and never called, so
+    // `drop_zone_screen`'s progress callback was dead. See the note there.
+    var sent = 0;
+    request.files.add(http.MultipartFile(
+      'file',
+      http.ByteStream(file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(sent, fileSize);
+        return chunk;
+      })),
+      fileSize,
+      filename: fileName,
+    ));
+
     final streamedRes = await request.send().timeout(const Duration(minutes: 10));
     final res = await http.Response.fromStream(streamedRes);
     return _handleResponse(res);
