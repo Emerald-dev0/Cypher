@@ -290,7 +290,55 @@ release** if the certificate says "Android Debug". Template committed at
 
 **Fix applied.** Both removed; `.gitignore` and a CI hygiene gate now block
 `google-services.json`, `GoogleService-Info.plist`, `*.jks`, `*.keystore`,
-`key.properties`, `.env`. Gitleaks runs against **full git history** in CI.
+`key.properties`, `.env`.
+
+**Secret scanning is split in two**, because the two halves have different
+lifetimes:
+
+- **Blocking:** `gitleaks detect --no-git` over the current tree. A newly
+  introduced secret fails the build.
+- **Non-blocking:** full history, reported as a warning annotation that names
+  P1-B1 and counts the findings. It is red and *will stay red* until
+  `git filter-repo` runs, because both credentials are still reachable from the
+  base commit. Purging rewrites every SHA and must be coordinated with
+  contributors, so it cannot ride along in a feature PR.
+
+`.gitleaks.toml` allowlists the two retired credentials **by exact value**, not by
+path. An earlier revision allowlisted whole files, which would have meant a
+genuinely new secret pasted into `docs/AUDIT.md` sailed through. Matching the
+dead strings is the narrower risk: their only correct future is rotation.
+
+**S-06b — the allowlist was silently ignored. · FIXED.** The first version of
+`.gitleaks.toml` declared `[[allowlists]]` (plural, array of tables). Gitleaks
+v8.21.2's `ViperConfig` struct only has `Allowlist struct{...}` — singular — so
+viper dropped the key without a warning and the allowlist did nothing. The
+blocking scan then failed on the two credentials the file existed to cover.
+
+Upstream knows the naming is confusing: their own generated config carries the
+comment `# TODO: change to [[allowlists]]`, meaning the plural form is future
+intent rather than current schema. **If the pinned gitleaks version is ever
+bumped, re-read `config/config.go` at that tag** before assuming this file still
+parses.
+
+This is the same failure class as **S-18** and deserves the same lesson: a
+security control that is *silently* inert is worse than no control, because it
+produces a green tick. Both were found the same way — by watching what CI
+actually did rather than trusting what the configuration said.
+
+Diagnosis was done without the gitleaks binary (unreachable from the sandbox):
+the v8.21.2 rule set was fetched from the upstream tag via the GitHub API and its
+171 portable regexes run across the tracked tree, applying the global allowlist,
+each rule's per-rule allowlist, `regexTarget`, `secretGroup` and entropy
+threshold. That reduced 100 naive hits to the true answer — **0 findings** — and
+identified the only remaining noise as 35 occurrences of
+`key="keyEquivalentModifierMask"` in `mobile_app/macos/Runner/Base.lproj/MainMenu.xib`,
+Apple's generated Interface Builder template. `.xib` and `.storyboard` are
+therefore excluded by path, which is the same judgement gitleaks' own default
+config makes for `node_modules`, lockfiles, minified vendor JS and the
+gradle/maven wrappers.
+
+⚠️ **Both credentials must still be rotated**, and anyone who forked or cloned
+before P1-B1 has them.
 
 ### 🟠 S-07 — Wildcard CORS on a code-execution service · **DEFERRED → P1-S4**
 
