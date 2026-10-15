@@ -684,6 +684,53 @@ theme of the audit showing up in the tooling itself: the project claims Windows
 class of defect as `os.startfile()` or the `c:\windows` denylist — code that is
 only correct on the platform its author happened to use.
 
+The Pytest failure on Windows survived that fix and was still misreported as a
+coverage miss; S-18f has the real mechanism, which was more interesting.
+
+**S-18f — the runner's `errexit` silently deleted every diagnostic. · FIXED.**
+Three successive versions of the `Analyze` and `Pytest` steps failed while
+emitting **no annotations whatsoever** — not even the lines that had no pattern
+dependency and should have fired unconditionally.
+
+GitHub does not run a step's `run:` body plainly. The default shell is invoked as
+`bash -e {0}`, and on Windows as `bash --noprofile --norc -e -o pipefail {0}`.
+**`errexit` is already on before the first line of the step executes.**
+
+Those steps opened with `set -uo pipefail` specifically to capture
+`${PIPESTATUS[0]}` from `flutter analyze | tee analyze.txt`. Adding `pipefail`
+under an inherited `-e` makes the failing pipeline abort the script *at that
+line*, so `status=${PIPESTATUS[0]}` and the entire diagnostic block after it were
+unreachable. The gates were failing correctly and explaining nothing — the worst
+combination, because a gate that works but cannot be debugged still costs a round
+trip per hypothesis, and there were five hypotheses in play.
+
+Fixed with an explicit `set +e` at the top of any step that intends to *inspect* a
+failure rather than die from it, each ending in `exit "$status"` so it still fails.
+
+This retroactively explains an earlier misreading. The Pytest step's original
+`|| { … }` form *did* produce annotations, because `||` suppresses `errexit`. That
+made the coverage diagnostic look like the working part of the design, when it was
+merely the only part that could ever run — and it was the part producing the
+*wrong* diagnosis, because it grepped for `Required test coverage`, a string that
+also appears in pytest's **success** line
+(`Required test coverage of 35.0% reached. Total coverage: 35.42%`). Windows was
+at 35.42 % against a floor of 35: coverage had passed, and real test failures were
+being reported as a coverage problem. The check now anchors on
+`^FAIL Required test coverage`, which only the failure line produces.
+
+Misdiagnosis costs more than no diagnosis, because it sends the next person to
+edit the wrong knob.
+
+**Verification.** Both step bodies were extracted from the YAML and executed under
+`bash -e` — the same way the runner executes them — against synthetic failing
+commands, before the fix was committed: `flutter analyze` failing with an error, a
+warning and a percent sign in the text (one annotation per line, `%` escaped to
+`%25`, exit 1); `pytest` failing with tests only and coverage *passing* (annotated
+the `FAILED` line and the `E   assert` detail, said nothing about coverage); and
+`pytest` failing on coverage as well (both modes annotated separately). An earlier
+attempt to test this by `sed`-substituting the command produced broken nested
+quoting and reported a false pass — the test was faulty, not the step.
+
 **How these were diagnosed at all.** Job *logs* are served from
 `results-receiver.actions.githubusercontent.com`, a different host from
 `api.github.com`, and were unreachable from the environment where this was

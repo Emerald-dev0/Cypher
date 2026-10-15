@@ -420,6 +420,30 @@ fail there while passing on Linux from *identical source* — that is audit S-18
 and it cost a CI cycle to find. The node job sets it once in `defaults.run.shell`;
 do the same for any new job rather than repeating it per step.
 
+**Start any step that inspects a failure with `set +e`.** The runner invokes
+`bash -e {0}` — on Windows, `bash --noprofile --norc -e -o pipefail {0}` — so
+`errexit` is already on before your first line runs. Writing `set -uo pipefail` in
+order to capture `${PIPESTATUS[0]}` then makes the failing pipeline abort the
+script *at that line*, and every diagnostic after it is unreachable: the step
+fails while explaining nothing. That is audit S-18f, and it defeated three
+successive attempts to report analyzer output. End such a step with
+`exit "$status"` so it still fails.
+
+**Prove a diagnostic fires before you trust it.** A diagnostic that has never been
+observed producing output is a hypothesis, not a safety net. Extract the step body
+from the YAML and run it under `bash -e`, against a synthetic failing command, in
+each failure mode you intend to distinguish. For the pytest step that means two
+runs: tests failing with coverage passing, and coverage failing too — because the
+first version conflated them and sent the next reader to edit `fail_under` for a
+problem that was not coverage.
+
+**Distinguish failure modes by a string only the failure produces.** Grepping for
+`Required test coverage` matched pytest's success line as well. Anchor on
+`^FAIL Required test coverage`. The same reasoning is why the annotation emitter
+deliberately does no pattern matching at all: it emits every non-empty line,
+because a filter that only recognises output shaped the way its author expected is
+how the analyzer findings went unreported twice.
+
 **A permanently red gate teaches people to ignore CI.** Two gates are therefore
 deliberately non-blocking and both are ratchets, not aspirations: coverage
 (`fail_under = 35` against a measured 35.73, target 70 at P1-T1) and the Dart
