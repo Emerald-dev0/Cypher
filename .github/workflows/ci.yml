@@ -252,15 +252,58 @@ jobs:
 
       - name: Pytest
         run: |
-          set -o pipefail
-          pytest tests -q --cov=core --cov-report=term-missing 2>&1 | tee pytest.log || {
-            echo "::error::Node tests failed."
-            if grep -q "Required test coverage" pytest.log; then
-              measured=$(grep -oE "Total coverage: [0-9.]+%" pytest.log | tail -1 || true)
-              echo "::error::Coverage ratchet not met ($measured). Either add tests, or raise fail_under in pc_app_flutter/backend/pyproject.toml to the measured value. It must never be lowered."
+          set -uo pipefail
+
+          # annotate <file> [max]
+          # Emit each non-empty line of <file> as its own workflow annotation.
+          # Job logs are served from a different host and may be unreachable, and
+          # step summaries are not readable through the API at all, so annotations
+          # are the only diagnostic channel that reliably survives. No pattern
+          # matching: an emitter that only fires on output shaped the way its
+          # author expected is how the previous version silently reported nothing.
+          annotate() {
+            local f="$1" max="${2:-50}" n=0
+            while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              n=$((n + 1))
+              [ "$n" -le "$max" ] || continue
+              line=${line//%/%25}
+              line=${line//$'\r'/%0D}
+              line=${line//$'\n'/%0A}
+              echo "::error::${line}"
+            done < "$f"
+            if [ "$n" -gt "$max" ]; then
+              echo "::error::$((n - max)) further finding(s) suppressed; see the job log."
             fi
-            exit 1
+            echo "Annotated $n finding(s) from $f."
           }
+
+          pytest tests -q --cov=core --cov-report=term-missing 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && exit 0
+
+          # Distinguish the two failure modes, because they have opposite fixes.
+          # An earlier version grepped for "Required test coverage", which ALSO
+          # matches the success line ("Required test coverage of 35.0% reached."),
+          # so a plain test failure on windows-latest was misreported as a
+          # coverage failure. Coverage there was 35.42% against a floor of 35 —
+          # it had passed. Misdiagnosis costs more than no diagnosis.
+          if grep -qE "^FAIL Required test coverage" pytest.log; then
+            measured=$(grep -oE "Total coverage: [0-9.]+%" pytest.log | tail -1)
+            floor=$(grep -oE "Required test coverage of [0-9.]+%" pytest.log | tail -1)
+            echo "::error::Coverage ratchet not met. $floor, measured $measured. Add tests, or raise fail_under in pc_app_flutter/backend/pyproject.toml to the measured value. It must never be lowered."
+          fi
+
+          failed=$(grep -cE "^FAILED |^ERROR " pytest.log || true)
+          if [ "${failed:-0}" -gt 0 ]; then
+            echo "::error::$failed test(s) failed or errored on ${{ matrix.os }} / Python ${{ matrix.python }}. Each is annotated below. A failure on one OS only is a platform assumption in the test or in the code — see docs/AUDIT.md S-18e and AGENTS.md §4 I6."
+            grep -E "^FAILED |^ERROR |^E   " pytest.log > pytest-failures.txt || true
+            annotate pytest-failures.txt 60
+          else
+            echo "::error::Node test step failed with no FAILED/ERROR lines — inspect the log; this is likely a collection or import error."
+            annotate pytest.log 40
+          fi
+          exit "$status"
 
   # ───────────────────────────────────────────────────────────
   # Flutter clients
@@ -354,16 +397,36 @@ jobs:
       - name: Analyze (errors and warnings)
         run: |
           set -uo pipefail
+
+          # annotate <file> [max]
+          # Emit each non-empty line of <file> as its own workflow annotation.
+          # Job logs are served from a different host and may be unreachable, and
+          # step summaries are not readable through the API at all, so annotations
+          # are the only diagnostic channel that reliably survives. No pattern
+          # matching: an emitter that only fires on output shaped the way its
+          # author expected is how the previous version silently reported nothing.
+          annotate() {
+            local f="$1" max="${2:-50}" n=0
+            while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              n=$((n + 1))
+              [ "$n" -le "$max" ] || continue
+              line=${line//%/%25}
+              line=${line//$'\r'/%0D}
+              line=${line//$'\n'/%0A}
+              echo "::error::${line}"
+            done < "$f"
+            if [ "$n" -gt "$max" ]; then
+              echo "::error::$((n - max)) further finding(s) suppressed; see the job log."
+            fi
+            echo "Annotated $n finding(s) from $f."
+          }
+
           flutter analyze --no-pub --no-fatal-infos --fatal-warnings 2>&1 | tee analyze.txt
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            # One annotation per finding, capped so a large backlog cannot flood
-            # the checks API. The cap itself is reported.
-            n=$(grep -cE '^ *(error|warning) *•' analyze.txt || true)
-            grep -E '^ *(error|warning) *•' analyze.txt | head -40 | while IFS= read -r line; do
-              echo "::error title=${{ matrix.app }} analyze::${line}"
-            done
-            echo "::error title=${{ matrix.app }} analyze::${n} error/warning finding(s); first 40 annotated above. Full list is in the job log."
+            echo "::error::flutter analyze reported errors or warnings in ${{ matrix.app }}. Each finding is annotated individually below."
+            annotate analyze.txt 50
             exit "$status"
           fi
           echo "flutter analyze clean (errors and warnings) for ${{ matrix.app }}."
