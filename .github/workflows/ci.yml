@@ -513,7 +513,35 @@ jobs:
       # debug keystore with a warning rather than failing. That fallback is what
       # keeps `flutter run --release` working for contributors.
       - name: Assemble release APK (debug-signed smoke build)
-        run: flutter build apk --release
+        run: |
+          # `set +e` is load-bearing — see .github/scripts/annotate.sh.
+          set +e
+          set -uo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
+
+          flutter build apk --release 2>&1 | tee build.txt
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && { echo "Release APK assembled (debug-signed smoke build)."; exit 0; }
+
+          count_first "Android release assemble" "exit ${status}" \
+            "Gradle reports the actionable part after 'FAILURE:' / '* What went wrong:'; that section is annotated below. Treat the count as authoritative — GitHub drops annotations past a small limit."
+
+          if grep -qE "FAILURE:|^\* What went wrong:" build.txt; then
+            # Everything from the first Gradle failure banner onward. The lines
+            # before it are Flutter's progress spinner and thousands of lines of
+            # dependency resolution, which would crowd out the actual cause.
+            awk '/^FAILURE:|^\* What went wrong:/{p=1} p' build.txt > build-failure.txt
+            annotate build-failure.txt 60
+          else
+            # No Gradle banner means the failure came from Flutter itself — a
+            # missing plugin, a pub problem, or a Kotlin compile error reported
+            # differently. Say which, and annotate the tail.
+            count_first "Android release assemble" "no Gradle FAILURE banner" \
+              "The failure came from flutter tool or Kotlin compilation rather than a Gradle task. The tail of the output is annotated below."
+            tail -80 build.txt > build-failure.txt
+            annotate build-failure.txt 60
+          fi
+          exit "$status"
 
       - name: Report unsigned-build fallback
         run: |

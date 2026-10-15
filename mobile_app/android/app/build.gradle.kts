@@ -41,7 +41,12 @@ val hasReleaseSigning = !signingValue("storeFile").isNullOrEmpty()
 android {
     namespace = cypherApplicationId
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "28.2.13676358"
+    // Take the NDK version from the Flutter SDK rather than pinning a literal.
+    // A hardcoded "28.2.13676358" was written against an older Flutter; the CI pin
+    // is now 3.38.9, and a literal that does not match what the SDK expects forces
+    // a multi-gigabyte NDK download or fails the build outright. `flutter.ndkVersion`
+    // tracks the SDK, the same way compileSdk and targetSdk already do here.
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
