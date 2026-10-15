@@ -206,6 +206,12 @@ jobs:
     defaults:
       run:
         working-directory: pc_app_flutter/backend
+        # MANDATORY. Windows runners default to PowerShell, and every step below
+        # is written in bash (`|| { … }`, `tee`, `grep -q`, `[ "$x" -ne 0 ]`).
+        # Without this, the node job passed on ubuntu-latest and failed on
+        # windows-latest from identical source — the "Ruff format check" step
+        # could not parse `|| { … }` as PowerShell. Audit S-18e.
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
@@ -337,8 +343,30 @@ jobs:
           echo "No banned dependencies."
 
       # BLOCKING: real defects. Errors and warnings mean broken code.
+      #
+      # The output is re-emitted as workflow annotations on purpose. Job logs are
+      # served from results-receiver.actions.githubusercontent.com, which is a
+      # different host from api.github.com and is not reachable from every
+      # environment; step summaries turn out not to be readable through the API
+      # either. Annotations ARE, via:
+      #   gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations
+      # so a failure here stays diagnosable without the log archive.
       - name: Analyze (errors and warnings)
-        run: flutter analyze --no-pub --no-fatal-infos --fatal-warnings
+        run: |
+          set -uo pipefail
+          flutter analyze --no-pub --no-fatal-infos --fatal-warnings 2>&1 | tee analyze.txt
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # One annotation per finding, capped so a large backlog cannot flood
+            # the checks API. The cap itself is reported.
+            n=$(grep -cE '^ *(error|warning) *•' analyze.txt || true)
+            grep -E '^ *(error|warning) *•' analyze.txt | head -40 | while IFS= read -r line; do
+              echo "::error title=${{ matrix.app }} analyze::${line}"
+            done
+            echo "::error title=${{ matrix.app }} analyze::${n} error/warning finding(s); first 40 annotated above. Full list is in the job log."
+            exit "$status"
+          fi
+          echo "flutter analyze clean (errors and warnings) for ${{ matrix.app }}."
 
       # NON-BLOCKING (for now): style.
       #

@@ -669,11 +669,39 @@ check printed no evidence. Hence two standing rules, now in `AGENTS.md` §6:
 2. **A check that passes must say what it checked.** Silent success and silent
    failure are indistinguishable, and only one of them is safe.
 
-Note also that job *logs* are served from `results-receiver.actions.githubusercontent.com`,
-a different host from `api.github.com`, and were unreachable from the environment
-where this was debugged. Job **annotations** and **step summaries** are reachable
-through the API, which is why the Flutter job now writes its resolved toolchain
-versions and any `pub get` failure into `$GITHUB_STEP_SUMMARY` (P1-C5).
+**S-18e — the node job assumed a bash shell and only worked on Linux. · FIXED.**
+`Ruff format check` passed on `ubuntu-latest` and failed on `windows-latest` from
+*identical source*. Windows runners default to **PowerShell**, and the step was
+written as `ruff format --diff --check . || { echo …; exit 0; }` — `|| { … }` is
+bash, not PowerShell. The same applied to the Pytest step (`tee`, `grep -q`,
+`[ "$x" -ne 0 ]`), which had simply not been reached yet because the job died
+earlier.
+
+Fixed with `defaults.run.shell: bash` on the whole node job, so the assumption is
+stated once instead of being implicit in five places. This is the cross-platform
+theme of the audit showing up in the tooling itself: the project claims Windows
+*and* Linux, and a CI job that silently behaves differently on each is the same
+class of defect as `os.startfile()` or the `c:\windows` denylist — code that is
+only correct on the platform its author happened to use.
+
+**How these were diagnosed at all.** Job *logs* are served from
+`results-receiver.actions.githubusercontent.com`, a different host from
+`api.github.com`, and were unreachable from the environment where this was
+debugged. Job **annotations** *are* reachable:
+
+```bash
+gh api repos/OWNER/REPO/actions/jobs/JOB_ID \
+  --jq '.steps[] | select(.conclusion=="failure") | .name'
+gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations --jq '.[].message'
+```
+
+That pair names the failing step, which was enough to find all five defects
+without a single log line. **Step summaries, by contrast, are not readable
+through the API** — that was tried and returned empty — so `flutter analyze`
+output is now re-emitted as one `::error::` annotation per finding, capped at 40,
+rather than written to `$GITHUB_STEP_SUMMARY`. Rule of thumb for P1-C5: if a
+diagnostic cannot be retrieved through `api.github.com`, it does not count as
+available.
 
 ### 🟡 S-17 — Guest session revocation was a silent no-op · **FIXED**
 
