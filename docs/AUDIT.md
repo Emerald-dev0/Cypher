@@ -57,15 +57,16 @@ implementations must be collapsed into one.
 
 Counts below were recomputed mechanically from the finding headings after the
 test-writing pass, because that pass added four findings (S-16, S-17, and the
-three S-13 sub-bugs) and corrected one (S-03).
+three S-13 sub-bugs) and corrected one (S-03). S-19 was added later, when the
+`windows-latest` CI leg ran this suite for the first time.
 
 | Severity | Count | Definition |
 | --- | --- | --- |
 | 🔴 Critical | 13 | Blocks public release; security exposure or total feature failure |
 | 🟠 High | 14 | Breaks a shipped feature, a platform, or the release pipeline |
-| 🟡 Medium | 11 | Correctness, maintainability or professionalism defects |
+| 🟡 Medium | 12 | Correctness, maintainability or professionalism defects |
 | 🔵 Low | 1 | Hygiene, polish, documentation drift |
-| **Total** | **39** | |
+| **Total** | **40** | |
 
 ### Status after this pass
 
@@ -73,9 +74,9 @@ three S-13 sub-bugs) and corrected one (S-03).
 | --- | --- | --- | --- | --- |
 | 🔴 Critical | 13 | **11** | 1 | 1 |
 | 🟠 High | 14 | **5** | 2 | 7 |
-| 🟡 Medium | 11 | **4** | 2 | 5 |
+| 🟡 Medium | 12 | **4** | 2 | 6 |
 | 🔵 Low | 1 | **1** | 0 | 0 |
-| **Total** | **39** | **21** | **5** | **13** |
+| **Total** | **40** | **21** | **5** | **14** |
 
 **Exactly one critical finding remains open: S-03, the paired-device filesystem
 sandbox (P1-S2).** Everything else critical is fixed or partially fixed. That is
@@ -757,6 +758,47 @@ security finding, not merely a functional one: the host UI confirmed a third
 party had been cut off while they retained file access until natural expiry.
 `validate_token()` now checks `is_active`, and four regression tests pin it.
 
+### 🟡 S-19 — `internal_token` has no restrictive ACL on Windows · **DOCUMENTED**
+
+The per-install loopback token added for S-01 is written and then
+`os.chmod(token_file, 0o600)`'d, with a comment noting the call is POSIX-only and
+that "Windows ACLs are inherited from `%APPDATA%`". The product code is honest
+about this. The **test** guarding it was not.
+
+`test_internal_token_is_persisted_with_restrictive_permissions` gated its
+assertion on `hasattr(server.os, "chmod")`, commented `# POSIX`. But `os.chmod`
+*exists* on Windows — it is not a POSIX-only attribute, it simply does something
+much weaker there, toggling the read-only bit and leaving `st_mode` reporting
+`0o666` for an ordinary file. The guard was therefore always true, and the
+assertion ran on `windows-latest` and failed:
+
+```
+E   assert (438 & 63) == 0
+E   AssertionError: internal_token is mode 0o666 — group/other can read it
+```
+
+438 is `0o666`. This was the only test failure on Windows, and it was a **test
+encoding a platform assumption**, not a product regression — the code was doing
+exactly what its comment said. `os.name` is the correct idiom and is already what
+`test_sandbox.py` uses in four places; `test_security.py` was the outlier. Fixed
+to skip on non-POSIX with the reason and this finding named in the skip message.
+
+**The residual risk is real but modest, and is recorded rather than closed.** On
+Windows the token file inherits the ACL of the user's `%APPDATA%`, which already
+denies other standard users — so the exposure `0o600` closes on POSIX (other local
+users reading the token) is largely closed by the platform. What is *not* closed is
+any process running as the same user, but that is equally true of a POSIX `0o600`
+file. A complete fix would set an explicit DACL via `pywin32` or `icacls`, and is
+tracked under **P3-L7**; it is not worth a new dependency today, and guessing at
+Windows ACL APIs from Linux is how the original test guard came to be wrong.
+
+The general lesson is in AGENTS.md §6: *a platform guard that is always true is
+worse than no guard*, because it makes a test look portable while it silently
+asserts one platform's semantics everywhere.
+
+**Found by:** the `windows-latest` leg of the node matrix, once S-18f made the
+Pytest step annotate individual failures instead of aborting before it could.
+
 ---
 
 ## 2. Broken functionality
@@ -1214,6 +1256,22 @@ TODO pointing at the SAF migration (P2-M6).
   ("A new Flutter project."). Replaced.
 - `.idea/` committed, including `studiobot.xml`, `deviceManager.xml` and an
   88 KB `caches/deviceStreaming.xml`.
+- **Four `flutter analyze` warnings in `mobile_app`, surfaced only when the
+  blocking analyzer gate ran for the first time.** Three unused imports
+  (`../theme/app_theme.dart` and `../widgets/cypher_card.dart` in
+  `screens/app_launcher_screen.dart`, `package:flutter/services.dart` in
+  `providers/connection_provider.dart`) and one dead field:
+  `_lastLifecycleState` was assigned in `didChangeAppLifecycleState` and never
+  read, because that method branches on its `state` parameter directly. All four
+  removed. `pc_app_flutter` produced **zero** warnings from the same gate, so this
+  is mobile-only drift — consistent with A-01's finding that the mobile app
+  received less maintenance than the desktop one.
+
+  The analyzer's `info`-level findings (notably ~`withOpacity` deprecations across
+  the screens and two `use_build_context_synchronously` instances) are deliberately
+  **not** fixed here and are **not** blocking: that is the P1-T5 style ratchet, and
+  `use_build_context_synchronously` deserves real attention rather than a
+  mechanical patch. `--no-fatal-infos --fatal-warnings` is the line.
 - 10 `*.artifact.md` AI scratch files across three `.artifacts/` directories.
 - `print()` used in Dart instead of `debugPrint` (3 sites, in the deleted
   permission code).

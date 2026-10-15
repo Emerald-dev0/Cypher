@@ -170,6 +170,17 @@ source at all — default copyright, all rights reserved.
 - **Screen stream crashed on early connect** — `mss` and `Image` are lazily
   initialised by a background warm-up thread, so a connect in the first ~2 s hit
   `None`. Added `_load_media_engine()` and a 503 guard.
+- **A security test asserted POSIX semantics on every platform** —
+  `test_internal_token_is_persisted_with_restrictive_permissions` gated its
+  `0o600` check on `hasattr(os, "chmod")`, but `os.chmod` *exists* on Windows,
+  where it only toggles the read-only bit and leaves `st_mode` at `0o666`. The
+  guard was always true, so the test failed on `windows-latest` while the product
+  code behaved exactly as documented. Now keyed on `os.name`, matching the idiom
+  `test_sandbox.py` already used. The underlying Windows gap is recorded as audit
+  S-19 and tracked as P3-L7.
+- **Four `flutter analyze` warnings in `mobile_app`** — three unused imports and a
+  dead field (`_lastLifecycleState`, assigned and never read). Surfaced only when
+  the blocking analyzer gate ran for the first time; `pc_app_flutter` was clean.
 - **Android release builds were blocked from the LAN** — Android 9+ rejects
   cleartext HTTP, and debug/profile builds are silently exempted by the Flutter
   tooling while release builds are not. This is the classic "works in debug, fails

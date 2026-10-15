@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/discovery_service.dart';
@@ -17,7 +16,6 @@ class ConnectionProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isScanning = false;
   Timer? _heartbeat;
   Map<String, dynamic> _systemStatus = {};
-  AppLifecycleState _lastLifecycleState = AppLifecycleState.resumed;
 
   ConnectionStatus get status    => _status;
   String?          get ip        => _ip;
@@ -54,7 +52,6 @@ class ConnectionProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _lastLifecycleState = state;
     if (state == AppLifecycleState.resumed && _status == ConnectionStatus.disconnected && _ip != null) {
       _tryReconnect();
     } else if (state == AppLifecycleState.paused) {

@@ -12,6 +12,7 @@ Run:  pytest tests/test_security.py -v
 from __future__ import annotations
 
 import hmac
+import os
 import secrets
 
 import pytest
@@ -162,11 +163,27 @@ class TestInternalToken:
         if not token_file.exists():
             pytest.skip("token file not persisted on this platform/config")
 
-        mode = token_file.stat().st_mode & 0o777
-        if hasattr(server.os, "chmod"):  # POSIX
-            assert mode & 0o077 == 0, (
-                f"internal_token is mode {oct(mode)} — group/other can read it"
+        if os.name != "posix":
+            # `os.chmod` EXISTS on Windows — it is not a POSIX-only attribute —
+            # so `hasattr(os, "chmod")` was the wrong guard and let the assertion
+            # below run there. On Windows chmod only toggles the read-only bit and
+            # st_mode reports 0o666 for an ordinary file, so the check failed on
+            # windows-latest while the product code was behaving exactly as
+            # documented. `os.name` is the idiom the rest of this suite already
+            # uses (see test_sandbox.py).
+            #
+            # The token's protection on Windows is the inherited ACL on
+            # %APPDATA%, not a mode bit. That is a real, if lower-severity,
+            # difference and is recorded as audit S-19 rather than papered over.
+            pytest.skip(
+                "POSIX permission bits do not apply; Windows relies on the "
+                "inherited %APPDATA% ACL (audit S-19)"
             )
+
+        mode = token_file.stat().st_mode & 0o777
+        assert mode & 0o077 == 0, (
+            f"internal_token is mode {oct(mode)} — group/other can read it"
+        )
 
     def test_two_fresh_nodes_would_get_different_tokens(self, server):
         """Proves the token is generated, not constant."""
