@@ -1,0 +1,26 @@
+# ─────────────────────────────────────────────────────────────
+# CYPHER Android release signing — TEMPLATE
+#
+# Copy to android/key.properties (git-ignored) and fill in real values.
+# NEVER commit the filled-in file, and never paste these values into an issue,
+# PR, or chat.
+#
+#   cp android/key.properties.example android/key.properties
+#
+# Generate a key (25-year validity is the Play Store minimum requirement):
+#
+#   keytool -genkey -v \
+#     -keystore ~/cypher-release.jks \
+#     -keyalg RSA -keysize 4096 \
+#     -validity 9125 \
+#     -alias cypher
+#
+# CI equivalent: set ANDROID_SIGNING_STOREFILE (path), ANDROID_SIGNING_STOREPASSWORD,
+# ANDROID_SIGNING_KEYALIAS and ANDROID_SIGNING_KEYPASSWORD as repository secrets.
+# See .github/workflows/release-mobile.yml.
+# ─────────────────────────────────────────────────────────────
+
+storeFile=/absolute/path/to/cypher-release.jks
+storePassword=CHANGE_ME
+keyAlias=cypher
+keyPassword=CHANGE_ME

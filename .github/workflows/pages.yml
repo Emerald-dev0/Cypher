@@ -1,0 +1,60 @@
+name: Website
+
+# Publishes the landing page (website/index.html) to GitHub Pages.
+# Enable under Settings → Pages → Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Stamp latest release links
+        run: |
+          set -euo pipefail
+          # Rewrite the download CTAs to the evergreen /releases/latest/download/
+          # URLs so the site never has to be rebuilt when a version ships.
+          REPO="${{ github.repository }}"
+          if [ -f website/index.html ]; then
+            sed -i -E \
+              -e "s#https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/releases/(download/[^\"']+|latest/download/[^\"']+|tag/[^\"']+)#https://github.com/$REPO/releases/latest/download/\1#g" \
+              website/index.html || true
+          fi
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

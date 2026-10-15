@@ -1,0 +1,85 @@
+CYPHER
+Copyright 2026 Emerald Dev and CYPHER contributors
+
+This product includes software developed at
+Emerald Dev (https://github.com/Emerald-dev0/Cypher).
+
+──────────────────────────────────────────────────────────────────────────────
+License
+──────────────────────────────────────────────────────────────────────────────
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations under
+the License.
+
+The full license text is in the LICENSE file at the root of this repository.
+
+──────────────────────────────────────────────────────────────────────────────
+Third-party components
+──────────────────────────────────────────────────────────────────────────────
+CYPHER is built on open-source components, each under its own license. Nothing
+in this NOTICE grants rights beyond those licenses.
+
+Node backend (Python)
+  Flask, Flask-CORS, Flask-SocketIO, python-socketio, python-engineio — BSD-3-Clause
+  psutil                                                        — BSD-3-Clause
+  Pillow                                                        — HPND (MIT-CMU)
+  mss                                                           — MIT
+  NumPy                                                         — BSD-3-Clause
+  OpenCV                                                        — Apache-2.0
+  zeroconf                                                      — MIT
+  pystray                                                       — MIT
+  requests                                                      — Apache-2.0
+  qrcode                                                        — BSD-3-Clause
+  pyautogui, pygetwindow, PyScreeze                             — BSD-3-Clause
+  pyperclip                                                     — BSD-3-Clause
+  pywin32                                                       — PSF-family (BSD-like)
+  pycaw                                                         — MIT
+  comtypes                                                      — MIT
+  screeninfo                                                    — MIT
+  customtkinter                                                 — MIT
+
+Mobile & desktop clients (Flutter/Dart)
+  Flutter SDK and first-party plugins                           — BSD-3-Clause
+  provider                                                      — MIT
+  http, intl, path, path_provider, shared_preferences           — BSD-3-Clause
+  google_fonts                                                  — Apache-2.0
+  animate_do, shimmer                                           — MIT / Apache-2.0
+  window_manager                                                — MIT
+  file_picker                                                   — Apache-2.0
+  permission_handler                                            — MIT
+  mobile_scanner                                                — MIT
+  qr_flutter                                                    — Apache-2.0
+  url_launcher, share_plus, device_info_plus                    — BSD-3-Clause
+  open_filex, media_scanner                                     — MIT / Apache-2.0
+  video_player, chewie, just_audio                              — BSD-3-Clause / MIT
+  syncfusion_flutter_pdfviewer                                  — Syncfusion Community License
+  flutter_markdown, flutter_highlight                           — BSD-3-Clause / MIT
+  uuid                                                          — MIT
+  nsd                                                           — MIT
+
+──────────────────────────────────────────────────────────────────────────────
+Licensing note on syncfusion_flutter_pdfviewer
+──────────────────────────────────────────────────────────────────────────────
+Syncfusion widgets are offered under a proprietary Community License that is
+free for individuals and small companies but is NOT an OSI-approved open-source
+license, and its terms are not compatible with redistribution under Apache-2.0.
+
+This is tracked as a release blocker: docs/plans/roadmap.md · Phase 1 (P1-B9)
+replaces the PDF preview with an Apache/BSD-compatible renderer before the first
+public tagged release. Until that lands, binary distributions that bundle the
+Syncfusion component must not be published.
+
+──────────────────────────────────────────────────────────────────────────────
+Trademarks
+──────────────────────────────────────────────────────────────────────────────
+"CYPHER" and the CYPHER logo are identifiers of Emerald Dev. The Apache-2.0
+grant in LICENSE covers copyright only; it does not grant any right to use the
+project name or marks. Forks must rebrand. See docs/product/branding.md.

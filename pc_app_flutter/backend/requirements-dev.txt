@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────
+# CYPHER node — development & CI dependencies
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# These are never bundled into the packaged node binary.
+# ─────────────────────────────────────────────────────────────
+
+-r requirements.txt
+
+# ── Lint / format ────────────────────────────────────────────
+ruff==0.8.2
+
+# ── Type checking (gradual adoption — see ../../ROADMAP.md P1-B6) ──
+mypy==1.13.0
+
+# ── Tests ────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-cov==6.0.0
+
+# ── Packaging ────────────────────────────────────────────────
+pyinstaller==6.11.1

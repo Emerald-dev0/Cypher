@@ -1,0 +1,599 @@
+name: Release
+
+# ─────────────────────────────────────────────────────────────
+# CYPHER release pipeline.
+#
+# Triggered by a semver tag:   git tag v1.2.0 && git push origin v1.2.0
+#
+# Fan-out build across every supported target, then a single `publish` job
+# assembles one GitHub Release with all artefacts, SHA-256 checksums and
+# generated notes. The release is created as a DRAFT so a human reviews the
+# artefacts and the changelog before it goes public.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_B64          base64 of the release .jks
+#   ANDROID_SIGNING_STOREPASSWORD
+#   ANDROID_SIGNING_KEYALIAS
+#   ANDROID_SIGNING_KEYPASSWORD
+#
+# Optional:
+#   WINDOWS_CODESIGN_CERT_B64     base64 PKCS#12 for Authenticode signing
+#   WINDOWS_CODESIGN_PASSWORD
+#
+# Without the signing secrets the Android jobs fail fast with an actionable
+# message instead of silently publishing an unsigned build.
+# ─────────────────────────────────────────────────────────────
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"          # stable release
+      - "v[0-9]+.[0-9]+.[0-9]+-*"        # pre-release (e.g. v1.2.0-rc.1)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (must already exist)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.27.1"
+  PYTHON_VERSION: "3.12"
+  JAVA_VERSION: "17"
+
+jobs:
+  # ───────────────────────────────────────────────────────────
+  preflight: fail loudly before burning 30 minutes of runners.
+  # ───────────────────────────────────────────────────────────
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "::error::Tag '$TAG' does not exist in this repository."
+              exit 1
+            fi
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$TAG' is not valid semver (expected vX.Y.Z[-pre])."
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+          PRERELEASE=false
+          [[ "$TAG" == *-* ]] && PRERELEASE=true
+
+          echo "tag=$TAG"            >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"    >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG (version $VERSION, prerelease=$PRERELEASE)"
+
+      - name: Verify version consistency across the monorepo
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          fail=0
+
+          check() { # <file> <extractor-cmd> <label>
+            local file="$1" cmd="$2" label="$3" found
+            found=$(eval "$cmd")
+            if [ "$found" != "$VERSION" ]; then
+              echo "::error::$label is '$found' but the tag says '$VERSION' ($file)"
+              fail=1
+            else
+              echo "  ok  $label = $found"
+            fi
+          }
+
+          echo "Checking version stamps for $VERSION:"
+          check mobile_app/pubspec.yaml \
+            "grep -m1 '^version:' mobile_app/pubspec.yaml | awk '{print \$2}' | cut -d+ -f1" \
+            "mobile pubspec"
+          check pc_app_flutter/pubspec.yaml \
+            "grep -m1 '^version:' pc_app_flutter/pubspec.yaml | awk '{print \$2}' | cut -d+ -f1" \
+            "desktop pubspec"
+          check pc_app_flutter/backend/metadata.json \
+            "python3 -c \"import json;print(json.load(open('pc_app_flutter/backend/metadata.json'))['app_version'])\"" \
+            "node metadata"
+          check pc_app_flutter/backend/cypher_installer.iss \
+            "grep -m1 '^AppVersion=' pc_app_flutter/backend/cypher_installer.iss | cut -d= -f2" \
+            "Windows installer"
+
+          if [ "$fail" -ne 0 ]; then
+            echo
+            echo "::error::Version drift. Bump every stamp, then re-tag."
+            echo "         See docs/plans/roadmap.md · P1-B8 (single source of version truth)."
+            exit 1
+          fi
+
+      # The `secrets` context cannot be indexed dynamically in an expression, so
+      # each secret is handed to the shell as its own env var and checked there.
+      # A missing secret fails the run in ~10s instead of after a 30-minute build.
+      - name: Verify Android signing secrets are present
+        env:
+          S_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          S_STOREPASS: ${{ secrets.ANDROID_SIGNING_STOREPASSWORD }}
+          S_KEYALIAS: ${{ secrets.ANDROID_SIGNING_KEYALIAS }}
+          S_KEYPASS: ${{ secrets.ANDROID_SIGNING_KEYPASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for pair in "ANDROID_KEYSTORE_B64:$S_KEYSTORE" \
+                      "ANDROID_SIGNING_STOREPASSWORD:$S_STOREPASS" \
+                      "ANDROID_SIGNING_KEYALIAS:$S_KEYALIAS" \
+                      "ANDROID_SIGNING_KEYPASSWORD:$S_KEYPASS"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            if [ -z "$value" ]; then
+              echo "::error::Missing repository secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo
+            echo "::error::Cannot produce a publishable Android build."
+            echo "         Add the secrets under Settings → Secrets and variables → Actions."
+            echo "         See docs/RELEASES.md for how to generate and upload the keystore."
+            exit 1
+          fi
+          echo "Android signing secrets present."
+
+  # ───────────────────────────────────────────────────────────
+  # 1. Python node — the headless backend binary
+  # ───────────────────────────────────────────────────────────
+  node:
+    name: Node · ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    needs: preflight
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact: cypher-node-windows-x64
+          - os: ubuntu-22.04
+            platform: linux
+            artifact: cypher-node-linux-x64
+    defaults:
+      run:
+        working-directory: pc_app_flutter/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pc_app_flutter/backend/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests before packaging
+        run: pytest tests -q
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm --clean cypher_node.spec
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $v = "${{ needs.preflight.outputs.version }}"
+          $stage = "dist/cypher-node-$v"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item dist/cypher_node.exe $stage/
+          Copy-Item metadata.json $stage/ -ErrorAction SilentlyContinue
+          # Ship the license with the binary — Apache-2.0 §4(a) requires it.
+          Copy-Item ../../LICENSE $stage/LICENSE.txt
+          Copy-Item ../../NOTICE  $stage/NOTICE.txt
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/cypher-node-$v-windows-x64.zip"
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          set -euo pipefail
+          v="${{ needs.preflight.outputs.version }}"
+          stage="dist/cypher-node-$v"
+          mkdir -p "$stage"
+          cp dist/cypher_node "$stage/"
+          cp metadata.json "$stage/" 2>/dev/null || true
+          cp ../../LICENSE "$stage/LICENSE.txt"
+          cp ../../NOTICE  "$stage/NOTICE.txt"
+          chmod +x "$stage/cypher_node"
+          tar -C dist -czf "dist/cypher-node-$v-linux-x64.tar.gz" "cypher-node-$v"
+
+      - name: Upload node artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            pc_app_flutter/backend/dist/*.zip
+            pc_app_flutter/backend/dist/*.tar.gz
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────
+  # 2. Desktop shell — Flutter for Windows & Linux
+  # ───────────────────────────────────────────────────────────
+  desktop:
+    name: Desktop · ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    needs: [preflight, node]
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact: cypher-desktop-windows-x64
+          - os: ubuntu-22.04
+            platform: linux
+            artifact: cypher-desktop-linux-x64
+    defaults:
+      run:
+        working-directory: pc_app_flutter
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux desktop toolchain
+        if: matrix.platform == 'linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev \
+            liblzma-dev libstdc++-12-dev \
+            libayatana-appindicator3-dev librsvg2-dev \
+            appstream
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enable desktop support
+        run: |
+          flutter config --enable-windows-desktop
+          flutter config --enable-linux-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-pub --fatal-infos
+
+      - name: Test
+        run: flutter test --no-pub
+
+      - name: Build release bundle
+        run: flutter build ${{ matrix.platform }} --release
+
+      # The desktop shell spawns the node binary, so the two ship together.
+      - name: Download node artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypher-node-${{ matrix.platform }}-x64
+          path: node-dist
+
+      - name: Stage combined bundle (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $v = "${{ needs.preflight.outputs.version }}"
+          $build = "build/windows/x64/runner/Release"
+          $stage = "dist/cypher-desktop-$v"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "$build/*" $stage -Recurse
+          # Node binary expected alongside the shell at backend/dist/cypher_node.exe
+          New-Item -ItemType Directory -Force -Path "$stage/backend/dist" | Out-Null
+          $zip = Get-ChildItem -Path node-dist -Filter *.zip | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath "$env:RUNNER_TEMP/node" -Force
+          Copy-Item "$env:RUNNER_TEMP/node/*/cypher_node.exe" "$stage/backend/dist/"
+          Copy-Item ../LICENSE "$stage/LICENSE.txt"
+          Copy-Item ../NOTICE  "$stage/NOTICE.txt"
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/cypher-desktop-$v-windows-x64.zip"
+
+      - name: Stage combined bundle (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          set -euo pipefail
+          v="${{ needs.preflight.outputs.version }}"
+          build="build/linux/x64/release/bundle"
+          stage="dist/cypher-desktop-$v"
+          mkdir -p "$stage"
+          cp -r "$build"/. "$stage"/
+          mkdir -p "$stage/backend/dist"
+          tarball=$(find node-dist -name '*.tar.gz' | head -1)
+          tmp=$(mktemp -d)
+          tar -xzf "$tarball" -C "$tmp"
+          find "$tmp" -name cypher_node -type f -exec cp {} "$stage/backend/dist/" \;
+          chmod +x "$stage/backend/dist/cypher_node"
+          cp ../LICENSE "$stage/LICENSE.txt"
+          cp ../NOTICE  "$stage/NOTICE.txt"
+          tar -C dist -czf "dist/cypher-desktop-$v-linux-x64.tar.gz" "cypher-desktop-$v"
+
+      - name: Build Windows installer (Inno Setup)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $v = "${{ needs.preflight.outputs.version }}"
+          choco install innosetup --no-progress -y
+          # Point the installer script at the staged bundle and stamp the version.
+          (Get-Content backend/cypher_installer.iss) `
+            -replace '^AppVersion=.*', "AppVersion=$v" `
+            -replace '^OutputBaseFilename=.*', "OutputBaseFilename=Cypher-Setup-$v" |
+            Set-Content backend/cypher_installer.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" backend/cypher_installer.iss
+          Copy-Item "backend/dist/installer/Cypher-Setup-$v.exe" "dist/"
+
+      - name: Upload desktop artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            pc_app_flutter/dist/*.zip
+            pc_app_flutter/dist/*.tar.gz
+            pc_app_flutter/dist/*.exe
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────
+  # 3. Android — APK (universal + per-ABI) and Play Store AAB
+  # ───────────────────────────────────────────────────────────
+  android:
+    name: Android · ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    needs: preflight
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [apk, appbundle]
+    defaults:
+      run:
+        working-directory: mobile_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Materialize release keystore
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > android/app/cypher-release.jks
+          cat > android/key.properties <<EOF
+          storeFile=cypher-release.jks
+          storePassword=${{ secrets.ANDROID_SIGNING_STOREPASSWORD }}
+          keyAlias=${{ secrets.ANDROID_SIGNING_KEYALIAS }}
+          keyPassword=${{ secrets.ANDROID_SIGNING_KEYPASSWORD }}
+          EOF
+          chmod 600 android/key.properties
+
+      # Guards against the failure mode this project already hit: a release
+      # silently signed with the debug key. build.gradle.kts falls back to debug
+      # when no key is found, so assert the real key was actually used.
+      - name: Build ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.target }}" = "apk" ]; then
+            flutter build apk --release --split-per-abi
+            flutter build apk --release
+          else
+            flutter build appbundle --release
+          fi
+
+      - name: Verify release signing
+        run: |
+          set -euo pipefail
+          BT=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          artifact=$(find build/app/outputs -name '*.apk' -o -name '*.aab' | head -1)
+          echo "Verifying $artifact"
+          if [[ "$artifact" == *.apk ]]; then
+            "$BT" verify --print-certs "$artifact" | tee /tmp/certs.txt
+          else
+            unzip -p "$artifact" META-INF/CERT.RSA > /tmp/cert.rsa 2>/dev/null || true
+            keytool -printcert -file /tmp/cert.rsa | tee /tmp/certs.txt
+          fi
+          if grep -qi 'Android Debug' /tmp/certs.txt; then
+            echo "::error::Artefact is signed with the DEBUG keystore. Refusing to publish."
+            exit 1
+          fi
+          echo "Release signature confirmed."
+
+      - name: Stage artefacts
+        run: |
+          set -euo pipefail
+          v="${{ needs.preflight.outputs.version }}"
+          mkdir -p dist
+          cp ../LICENSE dist/LICENSE.txt
+          cp ../NOTICE  dist/NOTICE.txt
+          if [ "${{ matrix.target }}" = "apk" ]; then
+            for abi in arm64-v8a armeabi-v7a x86_64; do
+              src="build/app/outputs/flutter-apk/app-$abi-release.apk"
+              [ -f "$src" ] && cp "$src" "dist/cypher-$v-android-$abi.apk"
+            done
+            src="build/app/outputs/flutter-apk/app-release.apk"
+            [ -f "$src" ] && cp "$src" "dist/cypher-$v-android-universal.apk"
+          else
+            cp build/app/outputs/bundle/release/app-release.aab "dist/cypher-$v-android.aab"
+          fi
+          ls -la dist/
+
+      - name: Destroy keystore
+        if: always()
+        run: |
+          rm -f android/app/cypher-release.jks android/key.properties
+          shred -u android/app/cypher-release.jks 2>/dev/null || true
+
+      - name: Upload android artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypher-android-${{ matrix.target }}
+          path: mobile_app/dist/*
+          if-no-files-found: error
+
+  # ───────────────────────────────────────────────────────────
+  # 4. Publish — checksums, SBOM, provenance and the Release itself
+  # ───────────────────────────────────────────────────────────
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [preflight, node, desktop, android]
+    permissions:
+      contents: write          # create the release
+      id-token: write          # sigstore/attestation provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+
+      - name: Flatten and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find artefacts -type f \( -name '*.zip' -o -name '*.tar.gz' \
+                 -o -name '*.exe' -o -name '*.apk' -o -name '*.aab' \) \
+            -exec cp {} release/ \;
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          echo "── Artefacts ──"
+          ls -la
+          echo "── SHA256SUMS.txt ──"
+          cat SHA256SUMS.txt
+
+      - name: Generate release notes from git history
+        id: notes
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.preflight.outputs.tag }}"
+          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then
+            RANGE="$PREV..$TAG"
+            echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+            {
+              echo "## What changed since $PREV"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h) — @%an' "$RANGE"
+              echo
+            } > notes.md
+          else
+            echo "range=" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Initial public release"
+              echo
+              echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)."
+            } > notes.md
+          fi
+
+      - name: Compose release body
+        run: |
+          set -euo pipefail
+          V="${{ needs.preflight.outputs.version }}"
+          {
+            echo "## CYPHER $V"
+            echo
+            echo "Local-first remote control: pair a phone to a PC over the LAN."
+            echo "No cloud account required. See the [README](https://github.com/${{ github.repository }}#readme)."
+            echo
+            echo "### Downloads"
+            echo
+            echo "| Platform | Artefact | Notes |"
+            echo "| --- | --- | --- |"
+            echo "| Windows | \`Cypher-Setup-$V.exe\` | Installer (recommended) |"
+            echo "| Windows | \`cypher-desktop-$V-windows-x64.zip\` | Portable, includes the node |"
+            echo "| Windows | \`cypher-node-$V-windows-x64.zip\` | Headless node only |"
+            echo "| Linux | \`cypher-desktop-$V-linux-x64.tar.gz\` | Portable, includes the node |"
+            echo "| Linux | \`cypher-node-$V-linux-x64.tar.gz\` | Headless node only |"
+            echo "| Android | \`cypher-$V-android-universal.apk\` | Sideload — any device |"
+            echo "| Android | \`cypher-$V-android-arm64-v8a.apk\` | Sideload — smaller, 64-bit ARM |"
+            echo "| Android | \`cypher-$V-android.aab\` | Google Play upload bundle |"
+            echo
+            echo "### Verify your download"
+            echo
+            echo "\`\`\`sh"
+            echo "sha256sum -c SHA256SUMS.txt --ignore-missing"
+            echo "\`\`\`"
+            echo
+            echo "iOS and macOS builds are not published yet — tracked in"
+            echo "[ROADMAP.md](https://github.com/${{ github.repository }}/blob/main/ROADMAP.md) Phase 4."
+            echo
+            cat notes.md
+            echo
+            echo "---"
+            echo "**Full changelog:** https://github.com/${{ github.repository }}/releases"
+          } > BODY.md
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          name: CYPHER ${{ needs.preflight.outputs.version }}
+          body_path: BODY.md
+          draft: true
+          prerelease: ${{ needs.preflight.outputs.prerelease == 'true' }}
+          files: release/*
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+
+      - name: Summary
+        run: |
+          {
+            echo "### Release staged"
+            echo
+            echo "Tag: \`${{ needs.preflight.outputs.tag }}\`"
+            echo "Pre-release: ${{ needs.preflight.outputs.prerelease }}"
+            echo
+            echo "The release is a **DRAFT**. Review the artefacts and body, then publish:"
+            echo
+            echo "\`\`\`sh"
+            echo "gh release edit ${{ needs.preflight.outputs.tag }} --draft=false"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,6 @@ import pystray
 from PIL import Image, ImageDraw
 import threading
 import os
-import sys
 import logging
 
 log = logging.getLogger("cypher")

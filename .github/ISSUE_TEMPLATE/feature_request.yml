@@ -1,0 +1,71 @@
+name: Feature request
+description: Propose a new capability for CYPHER.
+title: "[feat] "
+labels: [enhancement, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        CYPHER's product contract is **local-first, no account, no telemetry**.
+        Proposals that require a cloud account or send user data off-device need
+        to justify that trade-off explicitly — see
+        [docs/plans/relay-cloud.md](../../docs/plans/relay-cloud.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation, not the solution. Who hits this and how often?
+      placeholder: I want to pause a video playing on my PC without unlocking my phone's home screen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where would this live?
+      multiple: true
+      options:
+        - Mobile app
+        - Desktop shell
+        - Node backend
+        - Relay / cloud
+        - CLI
+        - Website / docs
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Security surface
+      description: Be honest — this drives the review depth.
+      options:
+        - None (pure UI / local behaviour)
+        - Reads data from the PC
+        - Writes or deletes data on the PC
+        - Executes code or controls the OS (input, power, processes)
+        - Adds a network listener or external connection
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This does not require a cloud account to use the core feature.
+        - label: This does not send telemetry or usage data off-device.
+        - label: I would be willing to help test or implement this.

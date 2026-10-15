@@ -1,0 +1,96 @@
+name: CodeQL
+
+# Security scanning for a remote-control product. Cypher's entire threat model
+# is "an attacker on the LAN gets full control of your PC", so static security
+# analysis is not optional — it runs on every PR that touches the node.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "pc_app_flutter/backend/**"
+      - "mobile_app/lib/**"
+      - "pc_app_flutter/lib/**"
+      - ".github/workflows/codeql.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "pc_app_flutter/backend/**"
+      - "mobile_app/lib/**"
+      - "pc_app_flutter/lib/**"
+  schedule:
+    # Mondays 06:00 UTC — catches newly published query updates.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # `security-extended` adds the queries that matter for this product:
+          # path traversal, command injection, weak crypto, cleartext transport.
+          queries: security-and-quality,security-extended
+
+      - name: Perform analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # Semgrep gives a second opinion with rules CodeQL does not ship, notably for
+  # Dart/Flutter and for the specific "secret in a query string" pattern that
+  # this codebase has already shipped once.
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: >
+          semgrep scan
+          --config p/security-audit
+          --config p/secrets
+          --config p/python
+          --config p/flutter
+          --sarif --output semgrep.sarif
+          --exclude build --exclude .venv
+        continue-on-error: true
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+        continue-on-error: true

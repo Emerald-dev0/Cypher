@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CYPHER network security policy.
+
+  WHY THIS EXISTS
+  ───────────────
+  Cypher talks to a peer node on the LOCAL network over plain HTTP by default.
+  Android 9 (API 28)+ blocks cleartext traffic by default, which would break
+  every LAN connection in a release build. The debug/profile manifests get an
+  automatic exemption from the Flutter tooling; release builds do not — this is
+  why the app "works in debug but not in release".
+
+  KNOWN LIMITATION
+  ────────────────
+  Android's network-security-config matches on hostnames only. It has no CIDR or
+  IP-range syntax, so it is not possible to scope the cleartext exception to
+  RFC1918 space declaratively. We therefore permit cleartext globally and
+  compensate in the transport layer: the API client refuses any non-private
+  destination over HTTP (see lib/services/api_service.dart, assertPrivateTarget).
+
+  REMOVAL PLAN
+  ────────────
+  docs/plans/security-hardening.md · Phase S2 replaces this with a TLS transport
+  using a per-pairing self-signed node certificate. When that lands, flip
+  cleartextTrafficPermitted to "false" and add the node CA under <trust-anchors>.
+-->
+<network-security-config>
+
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!--
+              Phase S2: also trust the user-installed CYPHER node CA so that
+              self-signed TLS on the LAN validates without a custom HTTP client.
+            -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+
+</network-security-config>

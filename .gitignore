@@ -1,0 +1,96 @@
+# ─────────────────────────────────────────────────────────────
+# CYPHER — repository-wide ignore rules
+# Sub-projects (mobile_app/, desktop/) add their own specifics.
+# ─────────────────────────────────────────────────────────────
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# PyInstaller / packaging output
+build/
+dist/
+*.manifest
+*.spec.bak
+
+# ── Flutter / Dart ───────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+pubspec_overrides.yaml
+*.g.dart.tmp
+
+# ── Android ──────────────────────────────────────────────────
+.gradle/
+local.properties
+*.keystore
+*.jks
+!debug.keystore
+# Firebase config is per-developer and must never be committed.
+google-services.json
+
+# ── iOS / macOS ──────────────────────────────────────────────
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/ephemeral/
+**/macos/Pods/
+**/macos/Flutter/ephemeral/
+xcuserdata/
+*.xcuserstate
+GoogleService-Info.plist
+
+# ── Linux / Windows native build ─────────────────────────────
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+**/linux/build/
+**/windows/build/
+
+# ── IDEs & editors ───────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.iml
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── AI / agent scratch space ─────────────────────────────────
+.artifacts/
+*.artifact.md
+.claude/
+.cursor/
+
+# ── Secrets & local config (NEVER COMMIT) ────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+secrets.json
+cypher_config.local.json
+paired_devices.json
+pairing_code.txt
+
+# ── Logs & recordings ────────────────────────────────────────
+*.log
+logs/
+recordings/
+*.mp4.tmp

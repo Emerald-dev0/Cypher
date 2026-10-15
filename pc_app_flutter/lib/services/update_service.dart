@@ -11,9 +11,9 @@ class UpdateResult {
 class UpdateService {
   static const String currentVersion = '2.0.0';
   static const String _apiUrl =
-      'https://api.github.com/repos/Oluwadaredaniel/Cypher/releases/latest';
+      'https://api.github.com/repos/Emerald-dev0/Cypher/releases/latest';
   static const String _releasesPage =
-      'https://github.com/Oluwadaredaniel/Cypher/releases/latest';
+      'https://github.com/Emerald-dev0/Cypher/releases/latest';
 
   static Future<UpdateResult?> check() async {
     try {

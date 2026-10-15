@@ -52,36 +52,43 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  // Request permissions for file operations
-  await _requestPermissions();
-
   runApp(const CypherApp());
 }
 
-Future<void> _requestPermissions() async {
+/// Request a single permission at the moment the user asks for the feature
+/// that needs it.
+///
+/// WHY THIS CHANGED
+/// ────────────────
+/// `main()` used to fire six permission dialogs (storage, all-files access,
+/// camera, precise location, photos, media library) at cold start, before any UI
+/// was on screen. That is the single fastest way to lose a user, and it is
+/// against Google Play policy: permission groups must be requested in context,
+/// with the requesting feature visible. Precise location in particular has no
+/// honest justification shown to the user here.
+///
+/// Call this from the screen that needs the permission — e.g. PairingScreen
+/// requests [Permission.camera] when the user taps "Scan QR", not on launch.
+///
+/// Returns true when granted. When permanently denied, the caller should offer
+/// [openAppSettings] rather than re-prompting (Android suppresses the dialog).
+Future<bool> requestPermissionWhenNeeded(Permission permission) async {
   try {
-    final permissions = [
-      Permission.storage,           // Read/Write files
-      Permission.manageExternalStorage, // Full storage access (Android 11+)
-      Permission.camera,            // Camera for potential future features
-      Permission.locationWhenInUse, // Location for local network discovery
-      Permission.photos,            // Photo access for screenshots
-      Permission.mediaLibrary,      // Media access
-    ];
+    var status = await permission.status;
+    if (status.isGranted) return true;
 
-    // Request all permissions
-    final statuses = await permissions.request();
+    status = await permission.request();
+    if (status.isGranted || status.isLimited) return true;
 
-    // Log permission status for debugging
-    for (final status in statuses.entries) {
-      if (status.value.isDenied) {
-        print('Permission ${status.key} denied');
-      } else if (status.value.isPermanentlyDenied) {
-        print('Permission ${status.key} permanently denied - open app settings');
-      }
+    if (status.isPermanentlyDenied) {
+      debugPrint('CYPHER: $permission permanently denied — user must enable it in Settings.');
+    } else {
+      debugPrint('CYPHER: $permission denied.');
     }
+    return false;
   } catch (e) {
-    print('Error requesting permissions: $e');
+    debugPrint('CYPHER: permission request failed: $e');
+    return false;
   }
 }
 
