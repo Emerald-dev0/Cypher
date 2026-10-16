@@ -663,8 +663,8 @@ Rules, enforced in review and in CI:
 
 ```
 Phase 1  ── P1-S2 sandbox helper + apply to all routes + property tests   ← FIRST
-            P1-S3 decorator-based public routes
-            P1-S4 CORS + Host validation (DNS rebinding)
+            P1-S3 decorator-based public routes          ← SHIPPED
+            P1-S4 CORS + Host validation (DNS rebinding) ← SHIPPED
             P1-S1 git history purge + rotate the Firebase key + upgrade notice
             P1-S5 typed audit-log schema
 

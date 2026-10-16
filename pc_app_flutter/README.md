@@ -95,13 +95,12 @@ Full list in [`../AGENTS.md`](../AGENTS.md) §6. The node-specific ones:
   for `None`. The node must degrade, not crash (AGENTS.md §4 I6).
 - **`server.py` is too big.** New route groups go in a new `core/` module as a
   Flask Blueprint (P1-B4), not appended here.
-- **Every route is authenticated by default.** Adding to `PUBLIC_ENDPOINTS`
-  creates an unauthenticated endpoint on a code-execution server and needs
-  explicit maintainer approval. `tests/test_security.py` fails if the set drifts.
-- **Filesystem access must go through the sandbox.** Today only the `/guest/*`
-  routes do, via `is_path_in_folders()`; the `/files/*` routes do not, which is
-  the top-priority open finding (P1-S2). Do not add new file routes until the
-  helper is promoted into `core/sandbox.py`.
+- **Every route is authenticated by default.** Unauthenticated views must carry
+  `@public_route` (under `@app.route`). `tests/test_security.py` fails if the
+  decorated set drifts from `{ping, get_status, pair_device}`.
+- **Filesystem access must go through `Sandbox.resolve`.** Every `/files/*`
+  route and `/apps/launch` already does. Do not add a new file route without it;
+  `test_every_filesystem_route_goes_through_the_sandbox` will fail the build.
 - **Do not reintroduce the customtkinter UI.** It was deleted deliberately.
   `recording_overlay.py` was kept because it is a privacy feature, not chrome.
 

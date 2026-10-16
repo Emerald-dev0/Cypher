@@ -26,6 +26,8 @@ from flask import Flask, jsonify, request, send_file, Response, stream_with_cont
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
+from .hostguard import cors_origin_list, host_header_allowed
+
 # BUGFIX: Pillow was used in ~8 places (clipboard image capture, window icons,
 # thumbnails, guest previews) but never imported. Because the code guards with
 # `if not ImageGrab`, the guard itself raised NameError and the route returned
@@ -98,10 +100,13 @@ def _load_audio_engine():
         ctypes = ct
 
 app = Flask(__name__)
-CORS(app)
+# P1-S4 / S-07: never CORS(app) with the default "*". Browser pages on the
+# internet must not read responses from this node.
+_CORS_ORIGINS = cors_origin_list()
+CORS(app, origins=_CORS_ORIGINS, supports_credentials=False)
 
 # Use 'threading' as it's the most compatible mode for Windows executables
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins=_CORS_ORIGINS, async_mode='threading')
 
 @socketio.on('connect')
 def handle_connect(auth=None):
@@ -120,6 +125,7 @@ from .utils import (
     log_event,
 )
 from .sandbox import Sandbox, SandboxViolation, is_path_in_folders
+from .auth import is_public_view, public_endpoint_names, public_route
 
 # BUGFIX: guest_manager was referenced as a bare module-level name in ~14 route
 # handlers (and in the before_request auth hook) but was only ever imported
@@ -495,19 +501,23 @@ else:
         battery_threshold = current_settings.get("battery_alert_threshold", 20)
 
 @app.route('/ping', methods=['GET'])
+@public_route
 def ping():
     return jsonify({"message": "pong", "status": "ok", "timestamp": datetime.now().strftime("%H:%M:%S")})
 
 # --- SECURITY & LOGGING MIDDLEWARE ---
 
-# Endpoints reachable without a token.
-#
-# Kept as an explicit module-level constant rather than a local list so that
-# tests can assert the set is exactly what is documented (see
-# tests/test_security.py::EXPECTED_PUBLIC_ENDPOINTS). A name-based allowlist is
-# fragile — renaming a view function silently changes what is public, which is
-# how audit finding S-04 arose. Roadmap P1-S3 replaces this with a decorator.
-PUBLIC_ENDPOINTS = frozenset({'ping', 'get_status', 'pair_device'})
+# Unauthenticated surface. Derived from ``@public_route`` (P1-S3), never a
+# hand-maintained list of function names — renaming a view cannot silently
+# expose it (audit S-04). Tests assert this equals EXPECTED_PUBLIC_ENDPOINTS.
+class _PublicEndpoints:
+    def __iter__(self):
+        return iter(public_endpoint_names(app.view_functions))
+
+    def __eq__(self, other: object) -> bool:
+        return public_endpoint_names(app.view_functions) == frozenset(other)  # type: ignore[arg-type]
+
+PUBLIC_ENDPOINTS = _PublicEndpoints()
 
 # Media elements (Flutter's Image.network, <video>, <audio>, the PDF viewer)
 # cannot attach custom headers, so the node accepts its own paired token in the
@@ -538,6 +548,10 @@ def verify_token_and_log():
     """
     global last_screenshot_time
 
+    # ── 0. Host header (DNS rebinding) ───────────────────────
+    if not host_header_allowed(request.host):
+        return jsonify({"success": False, "error": "invalid host"}), 400
+
     incoming_token = request.headers.get("X-Auth-Token")
     guest_token = request.args.get("token")
 
@@ -563,7 +577,7 @@ def verify_token_and_log():
     # ── 4. Authentication ────────────────────────────────────
     authorized = (
         request.method == 'OPTIONS'                    # CORS preflight
-        or request.endpoint in PUBLIC_ENDPOINTS
+        or is_public_view(app.view_functions.get(request.endpoint) if request.endpoint else None)
         or (incoming_token is not None and incoming_token in valid_tokens)
     )
 
@@ -901,6 +915,7 @@ def log_disconnect():
 # --- PAIRING ENDPOINTS ---
 
 @app.route('/pair_device', methods=['POST'])
+@public_route
 def pair_device():
     # `global` must precede the first use of the name in this function, otherwise
     # it is a SyntaxError ("used prior to global declaration") that takes down the
@@ -981,6 +996,7 @@ def unpair_device():
 # --- SYSTEM, POWER & PROCESSES ---
 
 @app.route('/status', methods=['GET'])
+@public_route
 def get_status():
     try:
         with open(SETTINGS_FILE) as f:

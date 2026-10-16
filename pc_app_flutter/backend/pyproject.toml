@@ -77,7 +77,7 @@ python_version = "3.11"
 # Enforced in CI (see .github/workflows/ci.yml). Adding a module to `files` is a
 # one-way door: once it type-checks, removing it needs justification.
 #
-files = ["core/guest_manager.py", "core/utils.py", "core/sandbox.py"]
+files = ["core/guest_manager.py", "core/utils.py", "core/sandbox.py", "core/auth.py", "core/hostguard.py"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -105,7 +105,7 @@ omit = ["core/recording_overlay.py", "tests/*"]
 #   · P1-T1 raises it to 70 and that becomes the permanent floor.
 #
 # Current measurement: 36.35% over core/ after P1-S2. Ratchet, never lower.
-fail_under = 36
+fail_under = 38
 show_missing = true
 skip_covered = true
 exclude_lines = [

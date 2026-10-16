@@ -72,17 +72,15 @@ three S-13 sub-bugs) and corrected one (S-03). S-19 was added later, when the
 
 | | Found | Fixed | Partially fixed | Deferred to roadmap |
 | --- | --- | --- | --- | --- |
-| 🔴 Critical | 14 | **13** | 1 | 0 |
-| 🟠 High | 16 | **7** | 2 | 7 |
+| 🔴 Critical | 14 | **14** | 0 | 0 |
+| 🟠 High | 16 | **9** | 2 | 5 |
 | 🟡 Medium | 12 | **4** | 2 | 6 |
 | 🔵 Low | 1 | **1** | 0 | 0 |
-| **Total** | **43** | **25** | **5** | **13** |
+| **Total** | **43** | **28** | **4** | **11** |
 
-**No critical finding remains open.** S-03 (P1-S2) shipped: `core/sandbox.py`
-owns path containment, every `/files/*` route and `/apps/launch` go through it,
-the Windows denylist is gone, and the ten `strict=True` xfails are now passing
-tests. The remaining critical item is S-04, which is partially fixed
-(auth-before-parse); converting `public_endpoints` to a decorator is P1-S3.
+**No critical finding remains open.** This pass closed S-04 (`@public_route`),
+F-08 (backend discovery), and S-07 (CORS + Host). Remaining Phase-1 security
+work is history purge (P1-S1) and TLS in Phase 2.
 
 Deferred items are not ignored — every one has a numbered task in
 [`ROADMAP.md`](../ROADMAP.md) and a cross-reference below.
@@ -254,18 +252,14 @@ path. `tests/test_sandbox.py` is 131 passing assertions with **zero xfails**;
 `test_every_filesystem_route_goes_through_the_sandbox` walks the AST of
 `server.py` so a new `/files/*` route that forgets the helper fails the build.
 
-### 🔴 S-04 — Unauthenticated-by-default is inverted for new routes · **PARTIALLY FIXED**
+### 🔴 S-04 — Unauthenticated-by-default is inverted for new routes · **FIXED**
 
 The `before_request` hook is a genuine global gate, which is the right shape.
-But `public_endpoints` is a list of **function names**, and the comment above it
-reads `# Audit Fix: Ensure these match the actual function names used in @app.route`
-— evidence that a rename had already silently turned a protected route into a
-public one, or vice versa. Name-based allowlists rot exactly like that.
-
-**Fix applied:** the media-token path was scoped to an explicit route set
-(`MEDIA_TOKEN_ROUTES`) rather than a path-prefix test.
-**Deferred:** converting `public_endpoints` to decorator-based opt-in
-(`@public_route`) so that adding a route cannot accidentally expose it — P1-S3.
+The old `public_endpoints` list of **function names** could silently expose a
+renamed view. Public-ness is now a mark on the view (`@public_route` in
+`core/auth.py`). `before_request` asks `is_public_view`. Tests assert the
+decorated set is exactly `{ping, get_status, pair_device}` and that a view
+named like a public one is not public unless decorated.
 
 ### 🔴 S-05 — Debug-keystore release builds · **FIXED**
 
@@ -345,7 +339,7 @@ gradle/maven wrappers.
 ⚠️ **Both credentials must still be rotated**, and anyone who forked or cloned
 before P1-B1 has them.
 
-### 🟠 S-07 — Wildcard CORS on a code-execution service · **DEFERRED → P1-S4**
+### 🟠 S-07 — Wildcard CORS on a code-execution service · **FIXED**
 
 ```python
 CORS(app)                                             # allows every origin
@@ -360,10 +354,9 @@ simple requests (GET/POST with form encoding) can still be *sent* without
 preflight, and any endpoint added to `public_endpoints` becomes drive-by
 reachable from any website on the internet.
 
-**Required fix:** restrict CORS to the loopback origin and the node's own
-served origins; validate `Host` against an allowlist
-(`127.0.0.1`, `localhost`, the node's own LAN IPs); reject requests whose `Host`
-is a public hostname.
+**Fix applied (P1-S4):** `core/hostguard.py` allowlists Host to loopback and
+this machine's own addresses. `CORS` and SocketIO `cors_allowed_origins` use
+that same list — no `"*"`. A request with `Host: evil.example` is 400.
 
 ### 🟠 S-08 — All transport is cleartext · **DEFERRED → P2-S1**
 
@@ -560,9 +553,9 @@ hook aborted before the auth check ran. Three consequences:
    capture to the real paired device — a trivial denial of service.
 
 **Fix:** the hook now authenticates first and never touches the body. Public
-endpoints and the media-token allowlist are module-level `frozenset`s
-(`PUBLIC_ENDPOINTS`, `MEDIA_TOKEN_ROUTES`) so `tests/test_security.py` can assert
-the exact set and fail if a name drifts. Logging moved to `_record_command()`,
+endpoints are views marked `@public_route`; the media-token allowlist remains a
+module-level `frozenset` (`MEDIA_TOKEN_ROUTES`). `tests/test_security.py` asserts
+the decorated public set. Logging moved to `_record_command()`,
 called after a token is confirmed, with the entry list bounded to 500 and
 `source_ip` attached. Regression tests: `test_anonymous_non_json_body_gets_401_not_415`
 (parametrised over the sensitive routes), `test_screenshot_cooldown_does_not_run_before_auth`.
@@ -963,7 +956,7 @@ imported anywhere (the server runs SocketIO in `threading` mode).
 `requirements-dev.txt`, and the stale root file deleted. Each removal and
 addition is documented inline.
 
-### 🟠 F-08 — Desktop shell cannot find its own backend · **DEFERRED → P1-D2**
+### 🟠 F-08 — Desktop shell cannot find its own backend · **FIXED**
 
 `BackendManager.start()`:
 
@@ -985,10 +978,9 @@ into a specific user profile (`hp`) that exists on exactly one computer.
 Also `BridgeService._appDataDir()` logic assumed `%APPDATA%` unconditionally,
 with no Linux or macOS branch.
 
-**Fix applied (partial):** `BridgeService` now resolves the app-data directory
-per platform (Windows / macOS / XDG on Linux).
-**Deferred:** `BackendManager` must resolve the node relative to
-`Platform.resolvedExecutable`, not the cwd — P1-D2.
+**Fix applied:** `BridgeService` resolves app-data per platform. `BackendManager`
+searches next to `Platform.resolvedExecutable`, then cwd, then PATH; never a
+hardcoded user home. The startup error screen reports `usedInterpreter`.
 
 ### 🟠 F-09 — Update checks pointed at the wrong GitHub account · **FIXED**
 

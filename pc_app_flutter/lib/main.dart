@@ -129,9 +129,13 @@ class _StartupScreenState extends State<StartupScreen> {
     final accent = const Color(0xFF7C3AED);
 
     if (_hasError) {
-      final errMsg = _backend.errorLog.isNotEmpty
+      final interpreter = _backend.usedInterpreter;
+      final raw = _backend.errorLog.isNotEmpty
           ? (_backend.errorLog.length > 400 ? "...${_backend.errorLog.substring(_backend.errorLog.length - 400)}" : _backend.errorLog)
           : "The backend service failed to respond in time.";
+      final errMsg = interpreter == null
+          ? raw
+          : "Tried: $interpreter\n$raw";
       return Scaffold(
         backgroundColor: const Color(0xFF0F0F11),
         body: Center(

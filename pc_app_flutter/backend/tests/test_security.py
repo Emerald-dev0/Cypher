@@ -100,13 +100,22 @@ class TestAuthenticationByDefault:
         )
 
     def test_every_public_endpoint_actually_exists(self, server):
-        """The other half of S-04: a name in the allowlist that matches no route
-        is a typo, and a typo'd route silently becomes authenticated (safe) or a
-        renamed route silently becomes public (not safe)."""
-        missing = EXPECTED_PUBLIC_ENDPOINTS - set(server.app.view_functions)
-        assert not missing, (
-            f"the public-endpoint allowlist names routes that do not exist: {missing}"
+        """P1-S3: public-ness is a decorator on the view, not a name in a list.
+        The documented set must equal the views that carry @public_route."""
+        from core.auth import public_endpoint_names
+
+        actual = public_endpoint_names(server.app.view_functions)
+        assert actual == EXPECTED_PUBLIC_ENDPOINTS, (
+            f"@public_route surface is {actual}, documented is {EXPECTED_PUBLIC_ENDPOINTS}"
         )
+
+    def test_a_view_is_not_public_just_because_it_is_named_like_one(self, server):
+        """The S-04 failure mode: a name-based allowlist treated `ping` as public
+        even after the function was renamed. The decorator does not."""
+        from core.auth import is_public_view
+
+        assert is_public_view(server.app.view_functions["ping"]) is True
+        assert is_public_view(server.app.view_functions["get_paired_devices"]) is False
 
     def test_media_token_route_names_all_exist(self, server):
         """Same failure mode, different list: a renamed streaming handler would

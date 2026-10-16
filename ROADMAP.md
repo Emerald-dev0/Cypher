@@ -78,8 +78,8 @@ abused.** Estimated 3–4 weeks part-time.
 | ID | Task | Detail | Est. |
 | --- | --- | --- | --- |
 | **P1-S2** ✅ | **Filesystem sandbox helper** — SHIPPED | `core/sandbox.py` (`Sandbox.resolve` + `SandboxViolation`). Applied to every `/files/*` route that takes a client path, `/apps/launch`, and the guest routes via the existing wrapper. Windows denylist removed. AST route-coverage test in `tests/test_sandbox.py`. | done |
-| **P1-S3** | Decorator-based public routes | Replace the `public_endpoints` function-name list with an explicit `@public_route` decorator so a rename cannot silently expose a route. Assert in tests that the public set is exactly `{ping, get_status, pair_device}`. | 1d |
-| **P1-S4** | CORS + DNS-rebinding defence | Restrict `CORS()` to known origins; validate the `Host` header against `{127.0.0.1, localhost, <own LAN IPs>}`; reject public hostnames; set `cors_allowed_origins` on SocketIO to match. | 2d |
+| **P1-S3** ✅ | **Decorator-based public routes** — SHIPPED | `@public_route` in `core/auth.py`. `before_request` uses `is_public_view`. Tests assert the decorated set is `{ping, get_status, pair_device}`. | done |
+| **P1-S4** ✅ | **CORS + DNS-rebinding defence** — SHIPPED | `core/hostguard.py`. Host allowlist (loopback + own addresses). CORS and SocketIO origins match. Public hostnames → 400. | done |
 | **P1-S1** | Purge secrets from git history | `git filter-repo` to remove `google-services.json`, the token literal and `master_password` from all history. Coordinate with every contributor (SHAs change). Rotate the Firebase key. Publish a forced-upgrade notice because pre-fix installs still carry the guessable token. | 2d |
 | P1-S5 | Structured audit log with an explicit "sensitive" field class | Groundwork for P3-S1 redaction; make `log_event` schema-typed rather than free-text dicts. | 2d |
 
@@ -112,7 +112,7 @@ abused.** Estimated 3–4 weeks part-time.
 
 | ID | Task | Detail | Est. |
 | --- | --- | --- | --- |
-| **P1-D2** | Fix backend discovery | Resolve the node relative to `Platform.resolvedExecutable`, not `Directory.current`. Remove the hardcoded `C:\Users\hp\...\python.exe`. Search PATH properly; report which interpreter was used in the error screen. | 1d |
+| **P1-D2** ✅ | **Fix backend discovery** — SHIPPED | Roots from `Platform.resolvedExecutable` then cwd. PATH search. No hardcoded user home. Error screen shows `usedInterpreter`. | done |
 | P1-D1 | Node health protocol | `/ping` returns build version + protocol version; the shell refuses to talk to a mismatched node instead of failing mysteriously. | 1d |
 | P1-D3 | Structured node logging | Replace `print()` with the `logging` module already configured in `service.py`; rotate to `<appData>/cypher/logs/node.log`; surface in the desktop Health tab. | 2d |
 

@@ -212,9 +212,7 @@ source at all — default copyright, all rights reserved.
   tooling while release builds are not. This is the classic "works in debug, fails
   in release" trap.
 - **Update checks pointed at the wrong GitHub account.**
-- **Desktop shell could not reliably find its own backend** — partially addressed;
-  the hardcoded `C:\Users\hp\...\python.exe` and `Directory.current.path` in
-  `backend_manager.dart` remain (P1-D2).
+- **Desktop shell could not reliably find its own backend** — closed in P1-D2.
 - **`is_path_in_folders()` only honoured the first allowed folder.** `return True`
   sat inside the loop with one `try/except` around the whole body, so the first
   non-containing folder raised `ValueError` and jumped to `return False` — the loop
@@ -229,6 +227,17 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
+- **CORS is no longer `*` and Host is validated (P1-S4 / S-07).**
+  `core/hostguard.py` allowlists loopback and this machine's addresses. SocketIO
+  uses the same origin list. `Host: evil.example` is 400.
+- **Public routes are opted in with `@public_route` (P1-S3 / S-04).**
+  `core/auth.py` marks views; `before_request` checks the mark, not a function-name
+  list. Renaming a view cannot silently expose it. Tests fail if the decorated
+  set drifts from `{ping, get_status, pair_device}`.
+- **Desktop node discovery no longer depends on one developer's machine (P1-D2 / F-08).**
+  `BackendManager` searches next to `Platform.resolvedExecutable`, then cwd,
+  then PATH. The hardcoded `C:\\Users\\hp\\...\\python.exe` is gone. The startup
+  error screen reports which interpreter was tried.
 - **Paired-device filesystem access is sandboxed (P1-S2 / S-03).**
   `core/sandbox.py` is the single place that decides whether a path is inside a
   shared folder (`Path.resolve()` + `relative_to()`). Every `/files/*` route that
