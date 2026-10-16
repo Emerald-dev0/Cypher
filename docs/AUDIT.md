@@ -72,18 +72,17 @@ three S-13 sub-bugs) and corrected one (S-03). S-19 was added later, when the
 
 | | Found | Fixed | Partially fixed | Deferred to roadmap |
 | --- | --- | --- | --- | --- |
-| 🔴 Critical | 14 | **12** | 1 | 1 |
+| 🔴 Critical | 14 | **13** | 1 | 0 |
 | 🟠 High | 16 | **7** | 2 | 7 |
 | 🟡 Medium | 12 | **4** | 2 | 6 |
 | 🔵 Low | 1 | **1** | 0 | 0 |
-| **Total** | **43** | **24** | **5** | **14** |
+| **Total** | **43** | **25** | **5** | **13** |
 
-**Exactly one critical finding remains open: S-03, the paired-device filesystem
-sandbox (P1-S2).** Everything else critical is fixed or partially fixed. That is
-the single highest-value change left in the project, and §3 of
-[`security-hardening.md`](plans/security-hardening.md) explains why it is now a
-much smaller change than it first appeared — the correct helper already exists
-and just needs to be promoted and applied.
+**No critical finding remains open.** S-03 (P1-S2) shipped: `core/sandbox.py`
+owns path containment, every `/files/*` route and `/apps/launch` go through it,
+the Windows denylist is gone, and the ten `strict=True` xfails are now passing
+tests. The remaining critical item is S-04, which is partially fixed
+(auth-before-parse); converting `public_endpoints` to a decorator is P1-S3.
 
 Deferred items are not ignored — every one has a numbered task in
 [`ROADMAP.md`](../ROADMAP.md) and a cross-reference below.
@@ -194,7 +193,7 @@ every successful pairing so it is single-use; `secrets.randbelow` replaces
 `random`. Blocked attempts are logged to the activity feed as urgent security
 events.
 
-### 🔴 S-03 — Paired-device filesystem access is not sandboxed · **DEFERRED → P1-S2** *(finding corrected)*
+### 🔴 S-03 — Paired-device filesystem access is not sandboxed · **FIXED** *(P1-S2)*
 
 > **Correction, 2026-10-15.** The first draft of this audit reported "the
 > filesystem is not sandboxed". Writing tests proved that half-wrong, and the
@@ -244,11 +243,16 @@ Three independent problems with that guard:
 
 `/files/download/zip` has the same denylist inline, duplicated.
 
-**Required fix** (P1-S2): promote `is_path_in_folders` into `core/sandbox.py` as
-`Sandbox.resolve(path, need=…)`, apply it to every `/files/*` route, replace the
-denylist entirely, and add the route-coverage test that asserts no filesystem
-route can bypass it. `tests/test_sandbox.py` already contains the payload suite
-(traversal, symlink, alternate separators, absolute upload destination).
+**Fix applied (P1-S2).** `core/sandbox.py` owns `Sandbox`, `SandboxViolation` and
+the original `is_path_in_folders` boolean wrapper. Every `/files/*` route that
+takes a client path, plus `/apps/launch`, calls `_require_shared_path` /
+`Sandbox.resolve`. `/files` no longer enumerates logical drives or the user's
+home shortcuts. The Windows `restricted_roots` denylist is gone. Uploads
+`secure_filename` the name and refuse the destination *before* `os.makedirs`.
+Error bodies say `"path is outside the shared folders"` and do not echo the
+path. `tests/test_sandbox.py` is 131 passing assertions with **zero xfails**;
+`test_every_filesystem_route_goes_through_the_sandbox` walks the AST of
+`server.py` so a new `/files/*` route that forgets the helper fails the build.
 
 ### 🔴 S-04 — Unauthenticated-by-default is inverted for new routes · **PARTIALLY FIXED**
 

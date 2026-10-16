@@ -77,11 +77,7 @@ python_version = "3.11"
 # Enforced in CI (see .github/workflows/ci.yml). Adding a module to `files` is a
 # one-way door: once it type-checks, removing it needs justification.
 #
-# NOTE: core/sandbox.py is intentionally NOT listed yet — it does not exist.
-# Listing a missing file makes mypy fail on the configuration rather than on the
-# code, which is how the whole gradual-adoption effort gets abandoned. Add it in
-# the same commit that creates the module (P1-S2).
-files = ["core/guest_manager.py", "core/utils.py"]
+files = ["core/guest_manager.py", "core/utils.py", "core/sandbox.py"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -108,10 +104,8 @@ omit = ["core/recording_overlay.py", "tests/*"]
 #     explaining what coverage was lost and why.
 #   · P1-T1 raises it to 70 and that becomes the permanent floor.
 #
-# Current measurement: 35.73% over core/ (server.py is the bulk of the uncovered
-# 1,250 statements — decomposing it under P1-B4 is what makes covering it
-# tractable).
-fail_under = 35
+# Current measurement: 36.35% over core/ after P1-S2. Ratchet, never lower.
+fail_under = 36
 show_missing = true
 skip_covered = true
 exclude_lines = [

@@ -31,7 +31,7 @@ Freeze      Stabilise   Harden      Port        Apple       Cloud
 
 The gate after Phase 1 is a **public-security gate**: CYPHER must not be
 announced, listed, or promoted before Phase 1 closes. Publishing a
-remote-control tool with an open filesystem sandbox (P1-S2) and no TLS (P2-S1
+remote-control tool with no TLS (P2-S1
 mitigations pending) would expose every early adopter's machine.
 
 ---
@@ -77,7 +77,7 @@ abused.** Estimated 3–4 weeks part-time.
 
 | ID | Task | Detail | Est. |
 | --- | --- | --- | --- |
-| **P1-S2** | **Filesystem sandbox helper** — the top-priority item | Single `resolve_within_sandbox(path)` using `Path.resolve()` + `is_relative_to()` against the user-configured shared-folder **allowlist**. Apply to every filesystem route: `/files/browse`, `/files/list`, `/files/download`, `/files/download/chunked`, `/files/download/zip`, `/files/delete`, `/files/upload`, `/files/preview`, `/files/thumbnail`, and all `/guest/files/*`. Resolve symlinks. Replace the Windows-only denylist entirely. Property-based test with traversal, symlink, UNC, case and slash-variant payloads. | 4d |
+| **P1-S2** ✅ | **Filesystem sandbox helper** — SHIPPED | `core/sandbox.py` (`Sandbox.resolve` + `SandboxViolation`). Applied to every `/files/*` route that takes a client path, `/apps/launch`, and the guest routes via the existing wrapper. Windows denylist removed. AST route-coverage test in `tests/test_sandbox.py`. | done |
 | **P1-S3** | Decorator-based public routes | Replace the `public_endpoints` function-name list with an explicit `@public_route` decorator so a rename cannot silently expose a route. Assert in tests that the public set is exactly `{ping, get_status, pair_device}`. | 1d |
 | **P1-S4** | CORS + DNS-rebinding defence | Restrict `CORS()` to known origins; validate the `Host` header against `{127.0.0.1, localhost, <own LAN IPs>}`; reject public hostnames; set `cors_allowed_origins` on SocketIO to match. | 2d |
 | **P1-S1** | Purge secrets from git history | `git filter-repo` to remove `google-services.json`, the token literal and `master_password` from all history. Coordinate with every contributor (SHAs change). Rotate the Firebase key. Publish a forced-upgrade notice because pre-fix installs still carry the guessable token. | 2d |

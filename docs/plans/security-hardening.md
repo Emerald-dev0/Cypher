@@ -186,7 +186,12 @@ node-local confirmation for any new pairing regardless of who asks.
 
 ---
 
-## 3. The filesystem sandbox (P1-S2) — highest priority
+## 3. The filesystem sandbox (P1-S2) — SHIPPED
+
+> **Status, 2026-10-16.** The helper is in `core/sandbox.py`. Every paired-device
+> filesystem route and `/apps/launch` call it. The Windows denylist is gone.
+> `tests/test_sandbox.py` has zero xfails. The rest of this section is kept as
+> the design record; do not re-implement it.
 
 ### 3.1 The problem
 

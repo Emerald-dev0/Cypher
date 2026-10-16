@@ -119,6 +119,7 @@ from .utils import (
     get_config_path,
     log_event,
 )
+from .sandbox import Sandbox, SandboxViolation, is_path_in_folders
 
 # BUGFIX: guest_manager was referenced as a bare module-level name in ~14 route
 # handlers (and in the before_request auth hook) but was only ever imported
@@ -335,6 +336,30 @@ def _get_shared_folders():
     except Exception as e:
         print(f"ERROR: _get_shared_folders: {e}")
     return []
+
+
+# P1-S2. One helper, every filesystem route. The message is generic on purpose:
+# echoing the resolved path helps an attacker map the disk (security-hardening.md
+# §3.3 rule 8).
+_SANDBOX_DENIED = {"success": False, "error": "path is outside the shared folders"}
+
+
+def _paired_sandbox() -> Sandbox:
+    return Sandbox(_get_shared_folders())
+
+
+def _require_shared_path(raw, *, need="read"):
+    """Resolve `raw` inside the node's shared-folder allowlist.
+
+    Returns (Path, None) on success, or (None, (response, status)) on denial.
+    Callers `return err` when the second element is set.
+    """
+    if not raw:
+        return None, (jsonify({"success": False, "error": "No path provided"}), 400)
+    try:
+        return _paired_sandbox().resolve(raw, need=need), None
+    except SandboxViolation:
+        return None, (jsonify(_SANDBOX_DENIED), 403)
 
 # --- PERSISTENCE HELPERS ---
 def load_paired_devices():
@@ -687,40 +712,6 @@ def get_unique_path(target_path):
     while (parent / f"{name} ({counter}){ext}").exists():
         counter += 1
     return str(parent / f"{name} ({counter}){ext}")
-
-def is_path_in_folders(file_path: str, allowed_folders: list) -> bool:
-    """Verify a path lies within one of the allowed folders.
-
-    Correct implementation: resolve() canonicalises the path (collapsing `..`,
-    following symlinks, normalising separators and case) and relative_to() then
-    proves containment. This is the right way to sandbox a path, and it is why
-    roadmap P1-S2 promotes this function rather than writing a new one.
-
-    BUG FIXED HERE: `return True` used to sit inside the loop immediately after
-    relative_to(), with a single try/except around the whole thing. The first
-    folder that did NOT contain the path raised ValueError, which jumped straight
-    to `return False` — so the loop never reached folders 2..N.
-
-    Effect: a guest granted several folders could only ever access the FIRST one.
-    Sharing "Documents + Pictures" with someone silently shared Documents only,
-    and every Pictures request came back as a bare 403 with no explanation.
-
-    Each folder is now tested independently and the loop continues on a miss.
-    """
-    try:
-        file_path_obj = Path(file_path).resolve()
-    except (ValueError, OSError):
-        return False
-
-    for folder in allowed_folders:
-        try:
-            folder_obj = Path(folder).resolve()
-            file_path_obj.relative_to(folder_obj)
-        except (ValueError, OSError):
-            continue   # not this folder — try the next one
-        return True
-
-    return False
 
 def get_human_readable_time(seconds: int) -> str:
     """Convert seconds to human readable format."""
@@ -1310,13 +1301,23 @@ def get_installed_apps():
 def launch_application():
     if not WINDOWS:
         return jsonify({"success": False, "error": "Not available on this platform"}), 400
-    path = request.json.get("path")
-    if path:
-        os.startfile(path)
-        app_name = Path(path).stem
-        add_activity("App Launched", f"Successfully initialized {app_name}.", category="Commands")
-        return jsonify({"success": True, "app": app_name})
-    return jsonify({"success": False, "error": "No path provided"}), 400
+    path = (request.json or {}).get("path")
+    if not path:
+        return jsonify({"success": False, "error": "No path provided"}), 400
+    # Launch is a filesystem operation: only Start Menu shortcuts the node itself
+    # enumerated, or a path inside a shared folder. os.startfile() on arbitrary
+    # client input was arbitrary code execution (audit S-03).
+    launch_roots = list(_get_shared_folders())
+    launch_roots.append(str(Path(os.environ.get('ProgramData', '')) / "Microsoft/Windows/Start Menu/Programs"))
+    launch_roots.append(str(Path(os.environ.get('AppData', '')) / "Microsoft/Windows/Start Menu/Programs"))
+    try:
+        resolved = Sandbox(launch_roots).resolve(path, need="execute")
+    except SandboxViolation:
+        return jsonify(_SANDBOX_DENIED), 403
+    os.startfile(str(resolved))
+    app_name = resolved.stem
+    add_activity("App Launched", f"Successfully initialized {app_name}.", category="Commands")
+    return jsonify({"success": True, "app": app_name})
 
 @app.route('/apps/close', methods=['POST'])
 def close_application():
@@ -1593,60 +1594,26 @@ def get_display_info():
 
 @app.route('/files', methods=['GET'])
 def get_root_files():
-    """Returns all logical drives, standard folders, and user-shared folders."""
+    """Returns the user-configured shared folders. Nothing else.
+
+    Used to also enumerate every logical drive and the user's Desktop/Documents/
+    Downloads — which made the allowlist decorative. P1-S2: the filesystem API
+    exposes only what the operator shared.
+    """
     try:
         root_data = []
-
-        # 1. Add User Shared Folders
-        try:
-            shared = _get_shared_folders()
-            home = Path.home()
-            for path in shared:
-                full_path = path
-                if path in ["Desktop", "Documents", "Downloads", "Videos", "Music", "Pictures"]:
-                    full_path = str(home / path)
-
-                if os.path.exists(full_path):
-                    root_data.append({
-                        "name": os.path.basename(path) or path,
-                        "path": full_path,
-                        "type": "folder",
-                        "is_shared": True
-                    })
-        except Exception as e:
-            print(f"ERROR: Adding shared folders to root: {e}")
-
-        # 2. Add Logical Drives (C:\, D:\, etc.)
-        for part in psutil.disk_partitions():
-            if 'cdrom' in part.opts or part.fstype == '': continue
-            try:
-                drive_name = part.mountpoint
-                usage = psutil.disk_usage(drive_name)
-                # NOTE: the backslash must stay OUT of the f-string expression.
-                # PEP 701 (Python 3.12+) permits it, but it is a hard SyntaxError
-                # on 3.11 and below — which silently bricks the whole module on
-                # any machine without exactly 3.12. Compute it first.
-                drive_label = drive_name.strip('\\').strip('/')
-                root_data.append({
-                    "name": f"Local Disk ({drive_label})",
-                    "path": drive_name,
-                    "type": "drive",
-                    "percent": usage.percent
-                })
-            except: pass
-
-        # 2. Add Quick Access Folders (Home)
         home = Path.home()
-        quick_folders = ["Desktop", "Documents", "Downloads", "Videos", "Music", "Pictures"]
-        for f in quick_folders:
-            p = home / f
-            if p.exists():
+        for path in _get_shared_folders():
+            full_path = path
+            if path in ["Desktop", "Documents", "Downloads", "Videos", "Music", "Pictures"]:
+                full_path = str(home / path)
+            if os.path.exists(full_path):
                 root_data.append({
-                    "name": f,
-                    "path": str(p),
-                    "type": "folder"
+                    "name": os.path.basename(path) or path,
+                    "path": full_path,
+                    "type": "folder",
+                    "is_shared": True
                 })
-
         return jsonify(root_data)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1657,20 +1624,21 @@ def list_files_for_app():
     try:
         p_str = request.args.get('path', "")
         if not p_str or p_str == "":
-            home = Path.home()
-            folders = ["Desktop", "Documents", "Downloads", "Videos", "Music", "Pictures"]
             root_data = []
-            for f in folders:
-                if (home / f).exists():
+            for folder in _get_shared_folders():
+                p = Path(folder)
+                if p.exists():
                     root_data.append({
-                        "name": f,
-                        "path": str(home / f),
+                        "name": p.name or str(p),
+                        "path": str(p),
                         "is_dir": True,
                         "selectable": True
                     })
             return jsonify({"contents": root_data})
 
-        p = Path(p_str)
+        p, err = _require_shared_path(p_str, need="read")
+        if err:
+            return err
         if not p.exists():
             return jsonify({"success": False, "error": "Path not found"}), 404
 
@@ -1700,9 +1668,9 @@ def list_files_for_app():
 def browse_files():
     try:
         path_str = request.args.get('path')
-        if not path_str:
-            return jsonify({"success": False, "error": "No path provided"}), 400
-        p = Path(path_str)
+        p, err = _require_shared_path(path_str, need="read")
+        if err:
+            return err
         if not p.exists():
              return jsonify({"success": False, "error": "Path does not exist"}), 404
         items = []
@@ -1746,14 +1714,11 @@ def download_files_zip():
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             for path in paths:
-                p = Path(path)
+                try:
+                    p = _paired_sandbox().resolve(path, need="read")
+                except SandboxViolation:
+                    return jsonify(_SANDBOX_DENIED), 403
                 if p.exists() and p.is_file():
-                    # Check for system protected folders (basic check)
-                    path_low = str(p).lower()
-                    restricted = ["c:\\windows", "c:\\boot"]
-                    if any(path_low.startswith(r) for r in restricted):
-                        continue
-
                     zf.write(str(p), arcname=p.name)
 
         zip_buffer.seek(0)
@@ -1772,16 +1737,13 @@ def get_upload_destinations():
     """Get list of folders where files can be uploaded."""
     try:
         destinations = []
-        home = Path.home()
-
-        # Add common folders
-        for folder_name in ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']:
-            folder_path = home / folder_name
+        for folder in _get_shared_folders():
+            folder_path = Path(folder)
             if folder_path.exists():
                 destinations.append({
-                    "name": folder_name,
+                    "name": folder_path.name or str(folder_path),
                     "path": str(folder_path),
-                    "icon": folder_name.lower()
+                    "icon": folder_path.name.lower()
                 })
 
         return jsonify({"success": True, "destinations": destinations})
@@ -1794,25 +1756,21 @@ def browse_folders():
     try:
         path_str = request.args.get('path')
         if not path_str:
-            # Return root folders if no path specified
-            home = Path.home()
             folders = []
-            for folder_name in ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']:
-                folder_path = home / folder_name
+            for folder in _get_shared_folders():
+                folder_path = Path(folder)
                 if folder_path.exists() and folder_path.is_dir():
                     folders.append({
-                        "name": folder_name,
+                        "name": folder_path.name or str(folder_path),
                         "path": str(folder_path),
                         "is_dir": True,
                     })
-            return jsonify({"success": True, "folders": folders, "current_path": str(home)})
+            current = str(Path(_get_shared_folders()[0])) if _get_shared_folders() else ""
+            return jsonify({"success": True, "folders": folders, "current_path": current})
 
-        path = Path(path_str)
-
-        # Security: prevent access to restricted paths
-        restricted = ["C:\\Windows", "C:\\Program Files", "C:\\Users\\Default"]
-        if any(str(path).lower().startswith(r.lower()) for r in restricted):
-            return jsonify({"success": False, "error": "Access Denied"}), 403
+        path, err = _require_shared_path(path_str, need="read")
+        if err:
+            return err
 
         if not path.exists() or not path.is_dir():
             return jsonify({"success": False, "error": "Invalid path"}), 400
@@ -1853,36 +1811,32 @@ def upload_file_stream():
         return jsonify({"success": False, "error": "No file part"}), 400
 
     files = request.files.getlist('file')
-    destination = request.form.get('destination', 'Downloads')
+    destination = request.form.get('destination', '')
 
-    # Map common folder names to full paths
-    folder_map = {
-        'Desktop': str(Path.home() / 'Desktop'),
-        'Documents': str(Path.home() / 'Documents'),
-        'Downloads': str(Path.home() / 'Downloads'),
-        'Pictures': str(Path.home() / 'Pictures'),
-        'Music': str(Path.home() / 'Music'),
-        'Videos': str(Path.home() / 'Videos'),
-    }
-
-    # If destination looks like a folder name, map it; otherwise treat as path
-    if destination in folder_map:
-        dest = folder_map[destination]
-    elif destination.startswith('/') or (len(destination) > 1 and destination[1] == ':'):
-        dest = destination  # Absolute path
-    else:
-        dest = str(Path.home() / destination)  # Relative to home
-
-    # Ensure destination directory exists
+    # Resolve the destination against the allowlist BEFORE creating anything.
+    # The previous code accepted an absolute path, called os.makedirs, then
+    # checked a Windows denylist — so a paired device could create directories
+    # anywhere on the disk (audit S-03 / F-13's sibling).
+    if not destination:
+        shared = _get_shared_folders()
+        if not shared:
+            return jsonify(_SANDBOX_DENIED), 403
+        destination = shared[0]
+    dest_path, err = _require_shared_path(destination, need="write")
+    if err:
+        return err
+    dest = str(dest_path)
     os.makedirs(dest, exist_ok=True)
 
-    restricted_paths = ["C:\\Windows", "C:\\Program Files", "C:\\Users\\Default"]
-    if any(dest.lower().startswith(r.lower()) for r in restricted_paths):
-        return jsonify({"success": False, "error": "Access Denied"}), 403
+    from werkzeug.utils import secure_filename
 
     results = []
     for file in files:
-        final_path = get_unique_path(os.path.join(dest, file.filename))
+        safe_name = secure_filename(file.filename or "")
+        if not safe_name:
+            results.append({"name": file.filename, "status": "error", "message": "invalid filename"})
+            continue
+        final_path = get_unique_path(os.path.join(dest, safe_name))
         temp_path = final_path + ".part" # Atomic upload pattern
         transfer_id = str(uuid.uuid4())
         active_transfers[transfer_id] = {
@@ -1925,7 +1879,10 @@ def get_transfers():
 
 @app.route('/files/download', methods=['GET'])
 def download_file():
-    path = request.args.get('path')
+    path, err = _require_shared_path(request.args.get('path'), need="read")
+    if err:
+        return err
+    path = str(path)
     if path and os.path.isfile(path):
         try:
             add_activity(
@@ -1943,7 +1900,10 @@ def download_file():
 def download_chunked():
     global cancel_all_transfers
     cancel_all_transfers = False
-    path = request.args.get('path')
+    resolved, err = _require_shared_path(request.args.get('path'), need="read")
+    if err:
+        return err
+    path = str(resolved)
     if not path or not os.path.isfile(path):
         return jsonify({"error": "File not found"}), 404
     try:
@@ -1973,7 +1933,10 @@ def cancel_downloads():
 @app.route('/files/preview', methods=['GET'])
 def preview_file():
     """Streams file for in-app preview with Range support and correct MIME types."""
-    path = request.args.get('path')
+    resolved, err = _require_shared_path(request.args.get('path'), need="read")
+    if err:
+        return err
+    path = str(resolved)
     if not path or not os.path.exists(path):
         return jsonify({"error": "File not found"}), 404
 
@@ -2015,7 +1978,10 @@ def preview_file():
 @app.route('/files/thumbnail', methods=['GET'])
 def get_file_thumbnail():
     """Generates a small preview for images."""
-    path = request.args.get('path')
+    resolved, err = _require_shared_path(request.args.get('path'), need="read")
+    if err:
+        return err
+    path = str(resolved)
     if not path or not os.path.exists(path) or not Image:
         return jsonify({"error": "Not found"}), 404
     try:
@@ -2035,18 +2001,12 @@ import shutil
 
 @app.route('/files/delete', methods=['DELETE'])
 def delete_file():
-    path = request.args.get('path')
+    resolved, err = _require_shared_path(request.args.get('path'), need="delete")
+    if err:
+        return err
+    path = str(resolved)
     if not path or not os.path.exists(path):
         return jsonify({"success": False, "error": "Not found"}), 404
-
-    path_low = path.lower()
-    restricted_roots = [
-        "c:\\windows", "c:\\program files", "c:\\program files (x86)",
-        "c:\\users\\default", "c:\\boot", "c:\\recovery"
-    ]
-
-    if any(path_low.startswith(r) for r in restricted_roots):
-        return jsonify({"success": False, "error": "Access Denied: System Protected Folder"}), 403
 
     try:
         if os.path.isfile(path):
@@ -2738,6 +2698,8 @@ def guest_search_files():
                 continue
 
             for item in folder_path.rglob('*'):
+                if not is_path_in_folders(str(item), session.allowed_folders):
+                    continue
                 if query in item.name.lower() and len(results) < 50:
                     try:
                         stats = item.stat()
@@ -2824,7 +2786,7 @@ def guest_upload_files():
         return jsonify({"success": False, "error": "No file part"}), 400
 
     files = request.files.getlist('file')
-    dest = request.form.get('destination', session.allowed_folders[0] if session.allowed_folders else str(Path.home() / "Downloads"))
+    dest = request.form.get('destination') or (session.allowed_folders[0] if session.allowed_folders else "")
 
     if not is_path_in_folders(dest, session.allowed_folders):
         return jsonify({"success": False, "error": "Access denied"}), 403

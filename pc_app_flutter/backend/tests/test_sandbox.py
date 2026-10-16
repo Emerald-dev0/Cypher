@@ -41,12 +41,6 @@ import pytest
 
 pytestmark = pytest.mark.security
 
-NOT_SANDBOXED = (
-    "P1-S2: correct helper exists (is_path_in_folders) but this route does not "
-    "call it. See docs/plans/security-hardening.md §3."
-)
-
-
 def _auth(token: str) -> dict:
     return {"X-Auth-Token": token}
 
@@ -174,26 +168,19 @@ class TestExistingHelperIsCorrect:
         assert check(str(outside / "f.txt"), roots) is False
 
 
-class TestTheDenylistIsNotASandbox:
-    """The `/files/delete` guard is a different, weaker mechanism. Contrast it
-    with the helper above to show why P1-S2 replaces it rather than extending it."""
+class TestTheDenylistIsGone:
+    """P1-S2 replaced the Windows string-prefix denylist. Pin that it does not
+    come back — a denylist next to an allowlist is how the allowlist gets
+    bypassed in review."""
 
-    def test_the_denylist_only_covers_windows_system_paths(self, server):
-        """Read the actual list out of the source so this test tracks the code."""
-        source = (Path(server.__file__)).read_text(encoding="utf-8")
-        assert "restricted_roots" in source
-        # Six Windows paths. Nothing protects ~/.ssh, ~/.aws, browser profiles,
-        # password vaults, or any non-Windows machine.
-        assert "c:\\\\windows" in source
+    def test_restricted_roots_is_not_in_the_node(self, server):
+        source = Path(server.__file__).read_text(encoding="utf-8")
+        assert "restricted_roots" not in source
+        assert "c:\\\\windows" not in source
 
-    def test_the_denylist_is_a_noop_on_non_windows(self):
-        if os.name == "nt":
-            pytest.skip("POSIX-specific")
-        # No POSIX path begins with "c:\", so `startswith` never matches and the
-        # guard silently permits everything.
-        sample = "/home/user/.ssh/id_rsa"
-        restricted = ["c:\\windows", "c:\\program files", "c:\\boot"]
-        assert not any(sample.lower().startswith(r) for r in restricted)
+    def test_delete_uses_the_sandbox_not_a_prefix_check(self, server):
+        source = Path(server.__file__).read_text(encoding="utf-8")
+        assert "_require_shared_path" in source
 
 
 # ═════════════════════════════════════════════════════════════
@@ -231,13 +218,28 @@ class TestGuaranteesThatHoldToday:
         assert response.status_code == 200
         assert "hello.txt" in {item["name"] for item in response.get_json()}
 
-    def test_browsing_a_nonexistent_path_is_a_404_not_a_500(self, client, paired_token):
+    def test_browsing_a_nonexistent_path_inside_the_sandbox_is_a_404_not_a_500(
+        self, client, paired_token, shared_folders
+    ):
+        """Existence is checked *after* containment. A path outside the
+        allowlist is 403 even if it does not exist — otherwise an attacker
+        enumerates the disk by probing. A missing file *inside* is 404."""
+        response = client.get(
+            "/files/browse",
+            query_string={"path": str(shared_folders.shared / "nope.txt")},
+            headers=_auth(paired_token),
+        )
+        assert response.status_code == 404
+
+    def test_a_path_outside_the_sandbox_is_403_even_if_it_does_not_exist(
+        self, client, paired_token
+    ):
         response = client.get(
             "/files/browse",
             query_string={"path": "/definitely/not/a/real/path"},
             headers=_auth(paired_token),
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_error_bodies_do_not_leak_internals(self, client, paired_token):
         response = client.get(
@@ -248,17 +250,19 @@ class TestGuaranteesThatHoldToday:
         body = response.get_data(as_text=True)
         assert "Traceback" not in body
         assert "server.py" not in body
+        # Rule 8: do not echo the resolved path.
+        assert "/definitely/not/a/real/path" not in body
 
 
 # ═════════════════════════════════════════════════════════════
 # The gap: paired-device routes do not call the helper
 # ═════════════════════════════════════════════════════════════
 
-class TestPairedDeviceRoutesAreNotSandboxed:
-    """A paired device is MORE trusted than a guest, but is currently LESS
-    confined. A lost or compromised phone therefore gets the whole filesystem."""
+class TestPairedDeviceRoutesAreSandboxed:
+    """P1-S2: a paired device is confined to the shared-folder allowlist, same
+    helper as a guest. These used to xfail; strict=True would have failed the
+    build on XPASS, so the markers are gone rather than left as decoration."""
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_browsing_outside_the_shared_folders_is_refused(
         self, client, paired_token, shared_folders
     ):
@@ -270,14 +274,12 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         assert response.status_code == 403
         assert "secret.txt" not in response.get_data(as_text=True)
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_browsing_the_filesystem_root_is_refused(self, client, paired_token):
         response = client.get(
             "/files/browse", query_string={"path": "/"}, headers=_auth(paired_token)
         )
         assert response.status_code == 403
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_dotdot_traversal_out_of_a_shared_folder_is_refused(
         self, client, paired_token, shared_folders
     ):
@@ -287,7 +289,6 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         )
         assert response.status_code == 403
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_downloading_a_file_outside_the_shared_folders_is_refused(
         self, client, paired_token, shared_folders
     ):
@@ -298,7 +299,6 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         assert response.status_code == 403
         assert b"never be reachable" not in response.data
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_previewing_a_file_outside_the_shared_folders_is_refused(
         self, client, paired_token, shared_folders
     ):
@@ -309,7 +309,6 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         assert response.status_code == 403
         assert b"never be reachable" not in response.data
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_deleting_a_file_outside_the_shared_folders_is_refused(
         self, client, paired_token, shared_folders
     ):
@@ -320,7 +319,6 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         assert response.status_code == 403
         assert secret.exists(), "a file outside the shared folders was deleted"
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_the_users_home_directory_is_not_enumerable(self, client, paired_token):
         """The denylist protects six Windows directories. It does not protect
         ~/.ssh, ~/.aws/credentials, browser profiles or password vaults — which
@@ -330,7 +328,6 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         )
         assert response.status_code == 403
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_a_symlink_inside_a_shared_folder_cannot_reach_outside_it(
         self, client, paired_token, shared_folders
     ):
@@ -346,7 +343,6 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         assert response.status_code == 403
         assert "secret.txt" not in response.get_data(as_text=True)
 
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
     def test_uploading_to_an_arbitrary_absolute_destination_is_refused(
         self, client, paired_token, shared_folders
     ):
@@ -368,6 +364,52 @@ class TestPairedDeviceRoutesAreNotSandboxed:
         )
         assert response.status_code == 403
         assert not smuggle_dir.exists(), "an upload created a directory outside the sandbox"
+
+    def test_list_without_a_path_returns_only_shared_folders(
+        self, client, paired_token, shared_folders
+    ):
+        response = client.get("/files/list", headers=_auth(paired_token))
+        assert response.status_code == 200
+        names = {item["name"] for item in response.get_json()["contents"]}
+        assert shared_folders.shared.name in names
+        assert shared_folders.outside.name not in names
+
+    def test_chunked_download_outside_the_sandbox_is_refused(
+        self, client, paired_token, shared_folders
+    ):
+        secret = shared_folders.outside / "secret.txt"
+        response = client.get(
+            "/files/download/chunked",
+            query_string={"path": str(secret)},
+            headers=_auth(paired_token),
+        )
+        assert response.status_code == 403
+
+    def test_zip_download_outside_the_sandbox_is_refused(
+        self, client, paired_token, shared_folders
+    ):
+        secret = shared_folders.outside / "secret.txt"
+        response = client.post(
+            "/files/download/zip",
+            json={"paths": [str(secret)]},
+            headers=_auth(paired_token),
+        )
+        assert response.status_code == 403
+
+    def test_thumbnail_outside_the_sandbox_is_refused(
+        self, client, paired_token, shared_folders
+    ):
+        secret = shared_folders.outside / "secret.txt"
+        response = client.get(
+            "/files/thumbnail",
+            query_string={"path": str(secret)},
+            headers=_auth(paired_token),
+        )
+        assert response.status_code == 403
+
+    def test_an_empty_path_is_400(self, client, paired_token):
+        response = client.get("/files/browse", headers=_auth(paired_token))
+        assert response.status_code == 400
 
 
 # ═════════════════════════════════════════════════════════════
@@ -451,18 +493,77 @@ class TestGuestRoutesAreSandboxed:
 # ═════════════════════════════════════════════════════════════
 
 class TestSandboxModuleExists:
-    @pytest.mark.xfail(reason=NOT_SANDBOXED, strict=True)
-    def test_the_helper_has_been_promoted_to_its_own_module(self):
-        """P1-S2 is complete when core/sandbox.py exists and every filesystem
-        route goes through it. When this flips to XPASS, remove every xfail
-        marker above — strict=True will fail the build until you do."""
+    def test_the_helper_has_been_promoted_to_its_own_module(self, tmp_path):
         import importlib
 
         sandbox = importlib.import_module("core.sandbox")
         assert hasattr(sandbox, "Sandbox")
         assert hasattr(sandbox, "SandboxViolation")
 
-        box = sandbox.Sandbox([Path("/tmp")])
-        assert box.resolve("/tmp/ok.txt", need="read") == Path("/tmp/ok.txt")
+        root = tmp_path / "root"
+        root.mkdir()
+        box = sandbox.Sandbox([root])
+        inside = root / "ok.txt"
+        assert box.resolve(str(inside), need="read") == inside.resolve()
         with pytest.raises(sandbox.SandboxViolation):
-            box.resolve("/etc/passwd", need="read")
+            box.resolve(str(tmp_path / "outside.txt"), need="read")
+
+    def test_empty_path_and_empty_allowlist_are_refusals(self, tmp_path):
+        from core.sandbox import Sandbox, SandboxViolation
+
+        with pytest.raises(SandboxViolation):
+            Sandbox([tmp_path]).resolve("", need="read")
+        with pytest.raises(SandboxViolation):
+            Sandbox([]).resolve(str(tmp_path / "x"), need="read")
+
+    def test_none_is_refused(self):
+        from core.sandbox import Sandbox, SandboxViolation
+
+        with pytest.raises(SandboxViolation):
+            Sandbox(["/tmp"]).resolve(None, need="read")  # type: ignore[arg-type]
+
+    def test_every_filesystem_route_goes_through_the_sandbox(self, server):
+        """Structural: every /files/* and /apps/launch handler must mention
+        either _require_shared_path, Sandbox, or is_path_in_folders. A new
+        route that forgets is the S-04-shaped bug for this control."""
+        import ast
+
+        source = Path(server.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        needed = []
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            routes = []
+            for dec in node.decorator_list:
+                if isinstance(dec, ast.Call) and getattr(dec.func, "attr", "") == "route":
+                    if dec.args and isinstance(dec.args[0], ast.Constant):
+                        routes.append(dec.args[0].value)
+            if not any(
+                isinstance(r, str) and (r.startswith("/files") or r == "/apps/launch")
+                for r in routes
+            ):
+                continue
+            # Informational endpoints that list the allowlist itself, or cancel
+            # an in-flight transfer, do not take a client path.
+            skip = {
+                "get_shared_folders_list",
+                "get_root_files",
+                "get_transfers",
+                "cancel_downloads",
+                "get_upload_destinations",
+            }
+            if node.name in skip:
+                continue
+            body = ast.get_source_segment(source, node) or ""
+            if not any(
+                token in body
+                for token in (
+                    "_require_shared_path",
+                    "_paired_sandbox",
+                    "Sandbox(",
+                    "is_path_in_folders(",
+                )
+            ):
+                needed.append((node.name, routes))
+        assert needed == [], f"filesystem routes missing a sandbox call: {needed}"

@@ -229,6 +229,14 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
+- **Paired-device filesystem access is sandboxed (P1-S2 / S-03).**
+  `core/sandbox.py` is the single place that decides whether a path is inside a
+  shared folder (`Path.resolve()` + `relative_to()`). Every `/files/*` route that
+  takes a client path, plus `/apps/launch`, goes through it. The Windows
+  `restricted_roots` denylist is gone. Uploads refuse the destination *before*
+  creating directories and sanitise filenames. `/files` no longer lists every
+  logical drive. The ten `strict=True` xfails in `tests/test_sandbox.py` now
+  pass; an AST test fails the build if a new filesystem route forgets the helper.
 - **The private-network guard refused a valid link-local range.**
   `ApiService.isPermittedTarget` classified loopback and link-local by delegating
   to `InternetAddress.isLoopback` / `isLinkLocal`, and the SDK helper disagreed
