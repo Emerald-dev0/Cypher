@@ -105,7 +105,7 @@ omit = ["core/recording_overlay.py", "tests/*"]
 #   · P1-T1 raises it to 70 and that becomes the permanent floor.
 #
 # Current measurement: 36.35% over core/ after P1-S2. Ratchet, never lower.
-fail_under = 40
+fail_under = 46
 show_missing = true
 skip_covered = true
 exclude_lines = [

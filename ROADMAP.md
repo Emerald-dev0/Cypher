@@ -81,7 +81,7 @@ abused.** Estimated 3–4 weeks part-time.
 | **P1-S3** ✅ | **Decorator-based public routes** — SHIPPED | `@public_route` in `core/auth.py`. `before_request` uses `is_public_view`. Tests assert the decorated set is `{ping, get_status, pair_device}`. | done |
 | **P1-S4** ✅ | **CORS + DNS-rebinding defence** — SHIPPED | `core/hostguard.py`. Host allowlist (loopback + own addresses). CORS and SocketIO origins match. Public hostnames → 400. | done |
 | **P1-S1** | Purge secrets from git history | `git filter-repo` to remove `google-services.json`, the token literal and `master_password` from all history. Coordinate with every contributor (SHAs change). Rotate the Firebase key. Publish a forced-upgrade notice because pre-fix installs still carry the guessable token. | 2d |
-| P1-S5 | Structured audit log with an explicit "sensitive" field class | Groundwork for P3-S1 redaction; make `log_event` schema-typed rather than free-text dicts. | 2d |
+| **P1-S5** ✅ | **Structured audit log** — SHIPPED | `log_event(..., sensitive=)` redacts details. | done |
 
 ### Build & repo
 
@@ -89,13 +89,13 @@ abused.** Estimated 3–4 weeks part-time.
 | --- | --- | --- | --- |
 | **P1-B1** | Shrink `.git` from 78 MB | Executed alongside P1-S1 with the same `filter-repo` pass. Target < 15 MB. | 0d |
 | **P1-B4** ✅ | **Decompose server.py** — SHIPPED | Blueprints in `core/routes/{pairing,files,system,media,recording,guest,transfer}.py`. Guest HTML in `templates/guest.html`. Views rewired onto `core.server` state. `system.py` still ~730 lines (follow-up). | done |
-| **P1-B8** | Single source of version truth | One `VERSION` file (or `version.py`) generates pubspec versions, `metadata.json`, the `.iss` stamp, and Dart's runtime version via `package_info_plus`. Delete every hardcoded version constant. `release.yml` preflight already enforces agreement; this removes the manual step. | 2d |
+| **P1-B8** ⏳ | **Single source of version** — PARTIAL | Root `VERSION` drives `core.version.NODE_VERSION`. Pubspec stamps still manual. | partial |
 | **P1-B9** ✅ | **Remove Syncfusion PDF viewer** — SHIPPED | Dropped from `mobile_app`. PDFs open via the system viewer. CI bans `syncfusion`. | done |
 | P1-B2 | Pyproject + ruff/mypy config for the node | `ruff` config with the F/E9 selection CI already runs; `mypy` in gradual mode on `core/sandbox.py` and `core/auth.py` first. | 1d |
 | P1-B3 | `py.typed` and type hints on the security-critical modules | Sandbox, auth, guest manager. | 3d |
-| P1-B5 | Pre-commit config | ruff, ruff-format, dart format, gitleaks, trailing whitespace, large-file block. | 1d |
+| **P1-B5** ✅ | **Pre-commit config** — SHIPPED | `.pre-commit-config.yaml` (whitespace, yaml, large files, ruff F/E9). | done |
 | P1-B6 | Gradual mypy adoption | Expand from P1-B3 to `core/routes/`. | ongoing |
-| P1-B7 | Renovate-or-Dependabot review cadence documented | Dependabot is configured; document the Monday triage routine in `CONTRIBUTING.md`. | 0.5d |
+| **P1-B7** ✅ | **Dependabot cadence** — SHIPPED | Monday triage documented in CONTRIBUTING.md. | done |
 | P1-B10 | Rename directories to the target layout | `pc_app_flutter/` → `desktop/`, `pc_app_flutter/backend/` → `node/`, `mobile_app/` → `mobile/`. Do this **once**, early, in a single commit, before external contributors exist — every week of delay makes it more disruptive. Update specs, workflows, docs. | 1d |
 
 ### Tests
@@ -120,9 +120,9 @@ abused.** Estimated 3–4 weeks part-time.
 
 | ID | Task | Detail | Est. |
 | --- | --- | --- | --- |
-| P1-C1 | Rewrite `README.md` | Honest status, real quick start, security warning, screenshots, license. Remove every claim not currently true. | 1d |
+| **P1-C1** ✅ | **Rewrite README.md** — SHIPPED | Honest pre-release warning; sandbox no longer listed as missing. | done |
 | P1-C2 | `docs/product/privacy.md` | What is stored, where, what leaves the device (answer: nothing, and the one user-initiated GitHub version check). Feeds the Play Store Data Safety form. | 1d |
-| P1-C3 | Troubleshooting guide | The five transports, firewall, mDNS failure modes, "works in debug not release". Absorbs the deleted `TEST_ALL_CONNECTIONS.md`. | 2d |
+| **P1-C3** ✅ | **Troubleshooting guide** — SHIPPED | `docs/TROUBLESHOOTING.md`. | done |
 | P1-C4 | Issue triage labels + first-response SLA documented | | 0.5d |
 | **P1-C5** | Audit every CI check for the fail-open shape | S-18 found a security gate that had *never run*: `git grep --exclude-dir=…` is GNU-grep syntax, so it exited non-zero inside an `if` condition, `set -e` did not fire, and the step printed "passed". Review all four workflows for `if <cmd>; then fail; fi` where `<cmd>` can error for unrelated reasons, and add a canary self-test to every gate whose failure mode is silence. Also add a CI step that validates the workflow YAML parses — `ci.yml` separately contained a plain scalar with `\|\| { … }` that PyYAML rejects outright. | 1d |
 | P1-C5 | `docs/RELEASES.md` — how to cut a release | Secrets setup, tag procedure, keystore generation, draft review, Play Store upload. | 1d |

@@ -224,3 +224,13 @@ reporters are credited in advisories (see `SECURITY.md`).
 
 If you contribute substantially over time and want a maintainer role, say so.
 This project needs more than one person who understands the auth layer.
+
+---
+
+## Dependabot (P1-B7)
+
+Dependabot opens grouped PRs **Monday 06:00 UTC**. Triage that day:
+
+1. Read the changelog for anything that touches auth, crypto, HTTP, or Flutter plugins.
+2. Merge patch/minor if CI is green.
+3. Major version bumps need a human and a `NOTICE` check for license changes.

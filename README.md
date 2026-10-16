@@ -21,15 +21,16 @@ cable, an account, or a vendor sitting between you and your own computer.
 CYPHER is **pre-release software under active hardening**. An audit in October
 2026 ([`docs/AUDIT.md`](docs/AUDIT.md)) found 43 defects, including a published
 authentication token and a file API that did not enforce the shared-folder
-boundary. Twenty-two are fixed; the rest are scheduled in
+boundary. The filesystem sandbox, public-route decorator, CORS/Host allowlist,
+and Syncfusion removal have shipped; remaining work is in
 [`ROADMAP.md`](ROADMAP.md).
 
 **What that means for you today:**
 
-- 🔴 **Do not run the node on a network you do not trust** — hotel, café,
-  conference or campus WiFi. The shared-folder sandbox is not yet enforced
-  ([P1-S2](ROADMAP.md)), so a paired device can currently read paths outside the
-  folders you selected.
+- 🟠 **Do not run the node on a network you do not trust** — hotel, café,
+  conference or campus WiFi. Traffic is still **unencrypted HTTP** on the LAN
+  (TLS is [P2-S1](docs/plans/security-hardening.md)). A paired device can only
+  read **shared folders** (sandbox, P1-S2).
 - 🟠 **Traffic is unencrypted.** LAN HTTP means anyone on the same network can
   sniff the auth token. TLS is [P2-S1](docs/plans/security-hardening.md).
 - 🟠 **Builds from before October 2026 must be uninstalled**, not updated. They
@@ -108,8 +109,9 @@ pip install -r requirements.txt
 python service.py
 ```
 
-The node prints its LAN address and a fresh six-digit pairing code. It listens on
-port 5000 and advertises itself via mDNS so your phone can find it.
+The node listens on port 5000 and advertises itself via mDNS. Pairing code is
+shown in the **desktop shell** (sidebar), not printed to stdout (that was a
+credential leak). Troubleshooting: [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 Or run the desktop shell, which manages the node for you:
 

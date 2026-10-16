@@ -227,6 +227,8 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
+- **Root `VERSION` file** (P1-B8 partial) and `log_event(..., sensitive=)` (P1-S5).
+- **Route smoke tests** covering settings, files, guest create/landing, media, power.
 - **Removed `syncfusion_flutter_pdfviewer` (P1-B9).** Proprietary Community
   License was Apache-2.0-incompatible. PDFs download and open in the system
   viewer. CI bans the package name.

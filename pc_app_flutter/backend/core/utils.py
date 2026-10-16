@@ -101,8 +101,12 @@ def check_for_updates():
         print(f"Update check failed: {e}")
     return {"update_available": False}
 
-def log_event(event_type, details):
-    """Industry Standard local analytics/event logging."""
+def log_event(event_type: str, details: object, *, sensitive: bool = False) -> None:
+    """Local event log (P1-S5). Never send this file anywhere.
+
+    ``sensitive=True`` means ``details`` must not be persisted as-is (keystrokes,
+    clipboard, tokens). We record only the type and a placeholder.
+    """
     from datetime import datetime
 
     log_file = get_config_path("analytics_log.json")
@@ -110,7 +114,8 @@ def log_event(event_type, details):
     event = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "type": event_type,
-        "details": details
+        "sensitive": sensitive,
+        "details": "<redacted>" if sensitive else details,
     }
 
     try:
