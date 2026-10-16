@@ -7,7 +7,55 @@ import 'package:path/path.dart' as p;
 
 class BridgeService {
   static const String baseUrl = "http://127.0.0.1:5000";
-  static const String internalToken = "cypher-internal-pc-app-token-2024";
+
+  /// Loopback token the desktop shell uses to talk to its own node.
+  ///
+  /// SECURITY: this used to be the hardcoded literal
+  /// `"cypher-internal-pc-app-token-2024"`, duplicated in both Dart and Python
+  /// and committed to a public repository. Anyone on the same LAN could read it
+  /// from GitHub and take full control of the node.
+  ///
+  /// The node now generates a per-install token and writes it to
+  /// `<appData>/Cypher/internal_token` (0600). This mirrors
+  /// `_get_internal_token()` in backend/core/server.py — keep the two in sync.
+  ///
+  /// `static final` is lazily evaluated on first access, so all existing
+  /// synchronous call sites keep working unchanged.
+  static final String internalToken = _readInternalToken();
+
+  /// Resolves the same directory as `get_app_data_dir()` in backend/core/utils.py.
+  static String _appDataDir() {
+    if (Platform.isWindows) {
+      final base = Platform.environment['APPDATA'] ??
+          p.join(Platform.environment['USERPROFILE'] ?? '', 'AppData', 'Roaming');
+      return p.join(base, 'Cypher');
+    }
+    if (Platform.isMacOS) {
+      return p.join(Platform.environment['HOME'] ?? '', 'Library', 'Application Support', 'Cypher');
+    }
+    // Linux: honour XDG_CONFIG_HOME, fall back to ~/.config, matching the
+    // convention the node will adopt for Linux support (roadmap Phase 3).
+    final xdg = Platform.environment['XDG_CONFIG_HOME'];
+    if (xdg != null && xdg.isNotEmpty) return p.join(xdg, 'cypher');
+    return p.join(Platform.environment['HOME'] ?? '', '.config', 'cypher');
+  }
+
+  static String _readInternalToken() {
+    try {
+      final file = File(p.join(_appDataDir(), 'internal_token'));
+      if (file.existsSync()) {
+        final token = file.readAsStringSync().trim();
+        if (token.length >= 32) return token;
+      }
+    } catch (e) {
+      debugPrint('CYPHER: could not read internal token: $e');
+    }
+    // Empty token => every bridge call is rejected with 401 until the node has
+    // finished first-run setup. That is the safe failure mode: the shell shows
+    // "node not ready" rather than silently operating unauthenticated.
+    debugPrint('CYPHER: internal token not found — waiting for node first run.');
+    return '';
+  }
 
   // [ZERO LATENCY FIX] Get the pairing code from disk if backend is still starting
   Future<String> getConnectCode() async {

@@ -52,8 +52,8 @@ dependencies:
   chewie: ^1.13.1
   just_audio: ^0.10.5
 
-  # DOCUMENTS
-  syncfusion_flutter_pdfviewer: ^33.2.5
+  # DOCUMENTS — PDF in-app preview was Syncfusion (proprietary). Removed
+  # in P1-B9; PDFs download and open with the system viewer instead.
   flutter_markdown: ^0.7.7+1
   flutter_highlight: ^0.7.0
 

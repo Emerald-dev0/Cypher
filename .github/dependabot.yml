@@ -1,0 +1,127 @@
+version: 2
+
+# ─────────────────────────────────────────────────────────────
+# Dependabot configuration.
+#
+# CYPHER ships a Python node that can execute arbitrary code on a user's
+# machine, so dependency freshness is a security control, not housekeeping.
+# Grouping keeps PR volume survivable for a small maintainer team.
+# ─────────────────────────────────────────────────────────────
+
+updates:
+  # ── GitHub Actions (supply chain — highest priority) ────────
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - Emerald-dev0/maintainers
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "ci"
+      include: scope
+
+  # ── Python node backend ────────────────────────────────────
+  - package-ecosystem: pip
+    directory: "/pc_app_flutter/backend"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - Emerald-dev0/maintainers
+    labels:
+      - dependencies
+      - node
+    commit-message:
+      prefix: "deps(node)"
+      include: scope
+    groups:
+      node-minor-patch:
+        update-types: [minor, patch]
+        patterns: ["*"]
+    ignore:
+      # Major bumps of the capture stack need a manual smoke test of screen
+      # streaming and recording on a real Windows machine first.
+      - dependency-name: "opencv-python"
+        update-types: [version-update:semver-major]
+      - dependency-name: "numpy"
+        update-types: [version-update:semver-major]
+      - dependency-name: "pillow"
+        update-types: [version-update:semver-major]
+
+  # ── Flutter mobile client ──────────────────────────────────
+  - package-ecosystem: pub
+    directory: "/mobile_app"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - Emerald-dev0/maintainers
+    labels:
+      - dependencies
+      - mobile
+    commit-message:
+      prefix: "deps(mobile)"
+      include: scope
+    groups:
+      mobile-minor-patch:
+        update-types: [minor, patch]
+        patterns: ["*"]
+  # ── Flutter desktop client ─────────────────────────────────
+  - package-ecosystem: pub
+    directory: "/pc_app_flutter"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - Emerald-dev0/maintainers
+    labels:
+      - dependencies
+      - desktop
+    commit-message:
+      prefix: "deps(desktop)"
+      include: scope
+    groups:
+      desktop-minor-patch:
+        update-types: [minor, patch]
+        patterns: ["*"]
+
+  # ── Android Gradle ─────────────────────────────────────────
+  - package-ecosystem: gradle
+    directory: "/mobile_app/android"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    reviewers:
+      - Emerald-dev0/maintainers
+    labels:
+      - dependencies
+      - android
+    commit-message:
+      prefix: "deps(android)"
+      include: scope
+    ignore:
+      # AGP is pinned to 8.7.2 because 8.9.x hangs the Gradle daemon on Windows.
+      # Unlocking it is tracked in docs/plans/rebuild-mobile-ui.md · P2-M9.
+      - dependency-name: "com.android.tools.build:gradle"
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: "com.android.application"
+        update-types: [version-update:semver-major, version-update:semver-minor]

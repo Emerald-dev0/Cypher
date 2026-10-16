@@ -1,0 +1,19 @@
+# P1-B5. Install: pip install pre-commit && pre-commit install
+# Does not replace CI — it fails the same checks earlier.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '(\.md|\.html)$'
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-merge-conflict
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--select", "F,E9"]
+        files: ^pc_app_flutter/backend/

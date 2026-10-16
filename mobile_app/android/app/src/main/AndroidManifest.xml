@@ -1,27 +1,64 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ── Network ─────────────────────────────────────────────
+         INTERNET            reach the peer node / relay
+         ACCESS_NETWORK_STATE detect transport changes (WiFi <-> cellular <-> USB)
+         CHANGE_WIFI_MULTICAST_STATE  mDNS multicast lock for node discovery
+         NEARBY_WIFI_DEVICES (API 33+) mDNS/local discovery WITHOUT location permission
+         ACCESS_FINE_LOCATION          legacy mDNS discovery on API < 33
+         WAKE_LOCK           keep long file transfers alive with the screen off
+         FOREGROUND_SERVICE  keep a transfer alive when the app is backgrounded
+    -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="33" />
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- STORAGE PERMISSIONS -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <!-- ── Camera (QR pairing only — never required) ─────────── -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
-    <!-- Media permissions for Android 13+ -->
+    <!-- ── Storage ─────────────────────────────────────────────
+         Modern scoped storage covers picking and saving files.
+         MANAGE_EXTERNAL_STORAGE is only needed by the "Browse phone" screen, which
+         reads arbitrary directories. It triggers a Google Play Data Safety review
+         and is frequently rejected.
+         TODO(roadmap P2-M6): replace the raw browser with SAF (Storage Access
+         Framework) tree URIs and delete this permission.
+         Tracked in docs/plans/rebuild-mobile-ui.md
+    -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:label="CYPHER"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
-        android:requestLegacyExternalStorage="true">
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:requestLegacyExternalStorage="true"
+        tools:targetApi="31">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,16 +68,22 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
+
             <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- CYPHER SHARE SHEET INTEGRATION -->
+            <!-- ── Share sheet: "Share to CYPHER" ─────────────────────
+                 Handled natively in MainActivity.kt and forwarded to Dart over
+                 the `app/share` MethodChannel. The Dart side MUST register a
+                 handler for `onSharedFiles` and pull pending items with
+                 `getSharedFiles` — see docs/plans/rebuild-mobile-ui.md (P2-M4).
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -52,17 +95,24 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
         </intent>
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+        <!-- Required on API 30+ to resolve/open downloaded files. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" />
         </intent>
     </queries>
 </manifest>

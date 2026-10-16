@@ -1,0 +1,3 @@
+E       assert False is True
+E        +  where False = is_path_in_folders('C:\Users\x\outside\')
+FAILED tests/test_sandbox.py::test_a_trailing_separator_does_not_bypass_it - assert False is True

@@ -89,6 +89,12 @@ class _DropZoneScreenState extends State<DropZoneScreen> {
         durationMinutes: _expiresIn,
       );
       final token = session['token'] ?? session['guest_token'] ?? '';
+
+      // This URL is built directly rather than through ApiService._baseUrl, so
+      // it bypasses the private-network guard that every other request gets.
+      // It is also the most important one to check: the link is handed to a
+      // third party, and the guest token in it travels in cleartext.
+      ApiService.assertPrivateTarget(_ip);
       final url = 'http://$_ip:5000/guest/access?token=$token&mode=drop';
 
       if (!mounted) return;

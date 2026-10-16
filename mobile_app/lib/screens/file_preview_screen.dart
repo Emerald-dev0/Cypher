@@ -35,6 +35,8 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
   bool get _isImage => const ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
       .contains(widget.fileExtension.toLowerCase());
 
+  bool get _isPdf => widget.fileExtension.toLowerCase() == '.pdf';
+
   bool get _isText => const [
         '.txt', '.md', '.log', '.py', '.js', '.dart', '.json',
         '.css', '.html', '.yaml', '.yml', '.xml', '.c', '.cpp',
@@ -59,7 +61,12 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
     if (_previewUrlCached == null) return;
     setState(() => _loadingText = true);
     try {
-      final res = await http.get(Uri.parse(_previewUrlCached!)).timeout(const Duration(seconds: 15));
+      // The preview URL comes from the node, so its host is not something this
+      // screen chose. Re-validate it before fetching: the node's answer is
+      // trusted for the path, not for the destination.
+      final previewUri = Uri.parse(_previewUrlCached!);
+      ApiService.assertPrivateUri(previewUri);
+      final res = await http.get(previewUri).timeout(const Duration(seconds: 15));
       if (mounted) setState(() => _textContent = res.statusCode == 200 ? res.body : 'Preview unavailable.');
     } catch (_) {
       if (mounted) setState(() => _textContent = 'Preview unavailable.');
@@ -243,9 +250,11 @@ class _FilePreviewScreenState extends State<FilePreviewScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
-            const Text(
-              'No preview available\nSave to phone to open',
-              style: TextStyle(color: CypherColors.textMuted, fontSize: 13, height: 1.5),
+            Text(
+              _isPdf
+                  ? 'PDF preview uses the system viewer.\nSave to phone, then open.'
+                  : 'No preview available\nSave to phone to open',
+              style: const TextStyle(color: CypherColors.textMuted, fontSize: 13, height: 1.5),
               textAlign: TextAlign.center,
             ),
           ],

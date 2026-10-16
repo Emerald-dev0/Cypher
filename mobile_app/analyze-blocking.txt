@@ -1,0 +1,5 @@
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/a.dart:7:8 - unused_import
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/b.dart:10:8 - unused_import
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/c.dart:3:8 - unused_import
+warning - Unused import: '../theme/app_theme.dart' - lib/screens/d.dart:9:8 - unused_import
+warning - The value of the field '_discovery' isn't used - lib/services/e.dart:19:21 - unused_field

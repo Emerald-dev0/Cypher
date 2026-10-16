@@ -9,7 +9,6 @@ import threading
 import time
 import json
 import logging
-import traceback
 import uuid
 import psutil
 
@@ -32,7 +31,7 @@ class CypherDiscovery:
         """
         ips = []
         try:
-            for interface, addrs in psutil.net_if_addrs().items():
+            for _interface, addrs in psutil.net_if_addrs().items():
                 for addr in addrs:
                     if addr.family == socket.AF_INET:
                         ip = addr.address
@@ -69,7 +68,9 @@ class CypherDiscovery:
                 # Use a specific local IP to bind if possible, or bind to all
                 try:
                     udp_socket.bind(('', 0))
-                except: pass
+                except OSError as exc:
+                    # Binding is best-effort: an unbound socket still sends.
+                    log.debug("Could not bind beacon socket: %s", exc)
 
                 beacon_data = {
                     "type": "CYPHER_BEACON",
@@ -85,7 +86,10 @@ class CypherDiscovery:
                     # 1. Send to generic broadcast
                     try:
                         udp_socket.sendto(beacon, ('255.255.255.255', self.port + 1))
-                    except: pass
+                    except OSError as exc:
+                        # Many networks block 255.255.255.255; the subnet-specific
+                        # broadcast below is the one that usually works.
+                        log.debug("Generic broadcast send failed: %s", exc)
 
                     # 2. Send to subnet specific broadcast
                     try:
@@ -94,7 +98,8 @@ class CypherDiscovery:
                             parts[-1] = '255'
                             subnet_broadcast = '.'.join(parts)
                             udp_socket.sendto(beacon, (subnet_broadcast, self.port + 1))
-                    except: pass
+                    except (OSError, ValueError) as exc:
+                        log.debug("Subnet broadcast send failed: %s", exc)
 
                 # Sleep longer if no clients are active to save resources
                 time.sleep(3)
@@ -143,9 +148,10 @@ class CypherDiscovery:
                             "ip": ips[0] if ips else "127.0.0.1"
                         }).encode('utf-8')
                         probe_sock.sendto(response, addr)
-                except socket.timeout:
+                except TimeoutError:
                     continue
-                except: pass
+                except OSError as exc:
+                    log.debug("Probe socket error: %s", exc)
         except Exception as e:
             log.error(f"Probe listener failed: {e}")
 
@@ -176,7 +182,10 @@ class CypherDiscovery:
             try:
                 self.zeroconf.unregister_service(self.info)
                 self._register_zeroconf()
-            except: pass
+            except Exception as exc:
+                # The advertised name is now stale but discovery still works via
+                # the UDP beacon. Not worth killing the service over.
+                log.warning("Could not re-register mDNS after name change: %s", exc)
 
     def stop(self):
         self.stop_event.set()

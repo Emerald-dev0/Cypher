@@ -7,7 +7,6 @@ import '../providers/system_provider.dart';
 import '../services/api_service.dart';
 import '../services/clipboard_service.dart';
 import '../theme/colors.dart';
-import '../theme/app_theme.dart';
 import '../widgets/cypher_button.dart';
 import '../widgets/cypher_card.dart';
 

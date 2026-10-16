@@ -1,0 +1,3 @@
+Compiling test/widget_test.dart...
+lib/services/api_service.dart:381:24: Error: Method not found: 'ByteStream'.
+Failed to compile. Try again.

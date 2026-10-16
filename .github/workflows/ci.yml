@@ -1,0 +1,662 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Must satisfy the committed pubspec.lock files, whose `sdks:` footer reads
+  #   dart: ">=3.10.3 <4.0.0"
+  #   flutter: ">=3.38.4"
+  # Pinning an older SDK makes `flutter pub get` fail outright, which kills both
+  # Flutter jobs at "Install dependencies" before a single line of Dart is
+  # compiled or tested. That happened with 3.27.1.
+  #
+  # 3.38.9 is the newest hotfix on the 3.38 line. Flutter's own CHANGELOG records
+  # that 3.38 "adds support for Dart 3.10 stable", and staying inside the line
+  # that generated the lockfile minimises analyzer drift on a codebase that has
+  # never been through `dart format`.
+  #
+  # If you bump this, bump the lockfiles in the same PR by running
+  # `flutter pub get` in both apps and committing the result — CI verifies
+  # pubspec.lock is unchanged after install.
+  FLUTTER_VERSION: "3.38.9"
+  PYTHON_VERSION: "3.12"
+  JAVA_VERSION: "17"
+
+jobs:
+  # ───────────────────────────────────────────────────────────
+  # Repo hygiene. Cheap, runs first, catches the mistakes that
+  # have already happened once in this project's history.
+  # ───────────────────────────────────────────────────────────
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the secret scan can see every commit
+
+      - name: Block build artefacts, IDE files and secrets
+        run: |
+          set -euo pipefail
+          fail=0
+
+          check_absent() {
+            local pattern="$1" why="$2"
+            if git ls-files | grep -qE "$pattern"; then
+              echo "::error::Committed $why — these must be git-ignored:"
+              git ls-files | grep -E "$pattern" | sed 's/^/    /'
+              fail=1
+            fi
+          }
+
+          check_absent '(^|/)build/'                "build output"
+          check_absent '(^|/)dist/'                 "distribution output"
+          check_absent '(^|/)\.idea/'               "JetBrains IDE config"
+          check_absent '\.artifact\.md$'            "AI scratch artefacts"
+          check_absent '(^|/)\.artifacts/'          "AI scratch directories"
+          check_absent 'google-services\.json$'     "Firebase config (contains API keys)"
+          check_absent 'GoogleService-Info\.plist$' "Firebase config (contains API keys)"
+          check_absent '\.(jks|keystore|p12|pem)$'  "signing keys"
+          check_absent '(^|/)key\.properties$'      "signing credentials"
+          check_absent '(^|/)\.env$'                "environment secrets"
+          check_absent '\.(pyz|pkg|toc)$'           "PyInstaller intermediates"
+
+          # Guard against reintroducing the hardcoded loopback token.
+          #
+          # NOTE ON A BUG THAT WAS HERE: this used to read
+          #   git grep -nI --exclude-dir=.git 'cypher-internal-pc-app-token' -- .
+          # `--exclude-dir` is GNU-grep syntax; git grep rejects it and exits
+          # non-zero with a usage error. Because the command sat in an `if`
+          # condition, `set -e` did not fire, the branch was skipped, and the step
+          # happily printed "Hygiene checks passed." The gate had never run.
+          # A security check that silently does nothing is worse than no check.
+          #
+          # It now matches the *assignment* pattern rather than the bare literal,
+          # because docs/AUDIT.md and CHANGELOG.md quote the retired token on
+          # purpose — an audit that will not name the credential it found is not
+          # actionable. Quoting it in prose is correct; assigning it is the
+          # vulnerability. `git grep -I` already skips binaries and searches
+          # only tracked files.
+          # Three files legitimately quote the vulnerable assignment: the
+          # audit that documents it, the changelog, and this workflow's own
+          # canary below. A scanner that matches its own rule text is a
+          # scanner nobody can ship, so those are excluded by pathspec.
+          # Everything else is searched, and the canary self-check below
+          # proves the pattern still bites.
+          token_pattern='(INTERNAL_TOKEN|internalToken|[A-Za-z_]*[Tt]oken)[[:space:]]*[:=][[:space:]]*["'"'"']cypher-internal-pc-app-token'
+          if git grep -nIE "$token_pattern" -- . \
+               ':(exclude)docs/AUDIT.md' \
+               ':(exclude)CHANGELOG.md' \
+               ':(exclude).github/workflows/ci.yml' \
+               ':(exclude)docs/plans/security-hardening.md' ; then
+            echo "::error::Hardcoded internal token literal reintroduced as a credential."
+            echo "        The node generates a per-install token; see backend/core/server.py::_get_internal_token."
+            echo "        Quoting the retired literal in docs/AUDIT.md or CHANGELOG.md is fine; assigning it is not."
+            fail=1
+          fi
+
+          # Prove the guard itself works. If this ever stops matching, the check
+          # above has silently broken again — which is exactly what happened once
+          # already. A canary is the only reliable defence against a gate that
+          # fails open.
+          canary='INTERNAL_TOKEN = "cypher-internal-pc-app-token-2024"'
+          if ! printf '%s\n' "$canary" | grep -qE "$token_pattern"; then
+            echo "::error::Hygiene self-check failed: the token-literal pattern no longer matches its own canary."
+            fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo
+            echo "See .gitignore for the rules that should have caught this."
+            exit 1
+          fi
+          echo "Hygiene checks passed."
+
+      - name: Verify required community files exist
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in LICENSE NOTICE README.md CHANGELOG.md AGENTS.md ROADMAP.md \
+                   CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md \
+                   docs/plans/rebuild-desktop-ui.md \
+                   docs/plans/rebuild-mobile-ui.md \
+                   docs/plans/security-hardening.md ; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: $f"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      # ── Secret scanning, in two halves ────────────────────────
+      #
+      # Blocking: the current commit. A newly introduced secret fails the build.
+      # Non-blocking: full history. It is RED and will stay red until P1-B1 runs
+      # `git filter-repo`, because the removed Firebase key and token literal are
+      # still reachable from the base commit. Purging rewrites every SHA and has
+      # to be coordinated with all contributors, so it cannot ride along in a
+      # feature PR.
+      #
+      # Reporting it as an annotation rather than deleting the scan keeps the
+      # finding visible without making the tree permanently red — the same
+      # reasoning as the coverage ratchet in backend/pyproject.toml.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          version=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Gitleaks — current commit (BLOCKING)
+        run: |
+          set -euo pipefail
+          # --no-git scans the working tree, so this cannot be tripped by the
+          # secrets that are still reachable in history. .gitleaks.toml allowlists
+          # the two credentials that docs/AUDIT.md and CHANGELOG.md quote on
+          # purpose; that allowlist is scoped to those files only.
+          if ! gitleaks detect --no-git --source . --redact \
+               --config .gitleaks.toml --exit-code 1 -v; then
+            echo "::error::A secret was found in the current tree. Remove it, rotate it, and if it must be documented add a scoped allowlist entry to .gitleaks.toml."
+            exit 1
+          fi
+          echo "No secrets in the current tree."
+
+      - name: Gitleaks — full history (non-blocking until P1-B1)
+        run: |
+          set +e
+          gitleaks detect --source . --redact --config .gitleaks.toml \
+            --log-opts="--all" -v --report-format json --report-path /tmp/leaks.json
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            count=$(python3 -c "import json;print(len(json.load(open('/tmp/leaks.json'))))" 2>/dev/null || echo "?")
+            echo "::warning title=Secrets in git history (P1-B1)::${count} finding(s) are reachable from history. Expected until the \`git filter-repo\` purge runs — see ROADMAP.md P1-B1 and docs/AUDIT.md S-01/S-06. Rotate any credential named there."
+          else
+            echo "Full history is clean — P1-B1 can be closed."
+          fi
+          exit 0
+
+  # ───────────────────────────────────────────────────────────
+  # Python node
+  # ───────────────────────────────────────────────────────────
+  node:
+    name: Node (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: hygiene
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    defaults:
+      run:
+        working-directory: pc_app_flutter/backend
+        # MANDATORY. Windows runners default to PowerShell, and every step below
+        # is written in bash (`|| { … }`, `tee`, `grep -q`, `[ "$x" -ne 0 ]`).
+        # Without this, the node job passed on ubuntu-latest and failed on
+        # windows-latest from identical source — the "Ruff format check" step
+        # could not parse `|| { … }` as PowerShell. Audit S-18e.
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pc_app_flutter/backend/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+
+      # Gradual typing (P1-B6). `files` in backend/pyproject.toml lists only the
+      # modules that currently type-check cleanly, so this is a ratchet: adding a
+      # module is a one-way door. It catches the bug class that produced F-02/F-03
+      # (a name referenced in 22 routes but never imported) at the same time as
+      # ruff's F821, but with type information.
+      - name: Mypy (typed modules only)
+        run: mypy
+
+      - name: Ruff format check
+        run: |
+          ruff format --diff --check . || {
+            echo "::warning::Formatting drift. Run 'ruff format pc_app_flutter/backend' locally."
+            exit 0
+          }
+
+      # Catches the class of bug that took the whole node down before:
+      # an f-string with a backslash is a SyntaxError below Python 3.12.
+      - name: Compile-check every module on this interpreter
+        run: python -m compileall -q core service.py
+
+      - name: Pytest
+        run: |
+          # `set +e` is load-bearing — see the identical note on the analyze step.
+          # Without it the runner's errexit aborts on the failing pytest pipeline
+          # before the failure-mode analysis runs, so a Windows-only test failure
+          # was reported as a coverage miss.
+          set +e
+          set -uo pipefail
+
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
+
+          pytest tests -q --cov=core --cov-report=term-missing 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && exit 0
+
+          # Distinguish the two failure modes, because they have opposite fixes.
+          # An earlier version grepped for "Required test coverage", which ALSO
+          # matches the success line ("Required test coverage of 35.0% reached."),
+          # so a plain test failure on windows-latest was misreported as a
+          # coverage failure. Coverage there was 35.42% against a floor of 35 —
+          # it had passed. Misdiagnosis costs more than no diagnosis.
+          if grep -qE "^FAIL Required test coverage" pytest.log; then
+            measured=$(grep -oE "Total coverage: [0-9.]+%" pytest.log | tail -1)
+            floor=$(grep -oE "Required test coverage of [0-9.]+%" pytest.log | tail -1)
+            echo "::error::Coverage ratchet not met. $floor, measured $measured. Add tests, or raise fail_under in pc_app_flutter/backend/pyproject.toml to the measured value. It must never be lowered."
+          fi
+
+          failed=$(grep -cE "^FAILED |^ERROR " pytest.log || true)
+          if [ "${failed:-0}" -gt 0 ]; then
+            echo "::error::$failed test(s) failed or errored on ${{ matrix.os }} / Python ${{ matrix.python }}. Each is annotated below. A failure on one OS only is a platform assumption in the test or in the code — see docs/AUDIT.md S-18e and AGENTS.md §4 I6."
+            grep -E "^FAILED |^ERROR |^E   " pytest.log > pytest-failures.txt || true
+            annotate pytest-failures.txt 60
+          else
+            echo "::error::Node test step failed with no FAILED/ERROR lines — inspect the log; this is likely a collection or import error."
+            annotate pytest.log 40
+          fi
+          exit "$status"
+
+  # ───────────────────────────────────────────────────────────
+  # Flutter clients
+  # ───────────────────────────────────────────────────────────
+  flutter:
+    name: ${{ matrix.app }} analyze & test
+    runs-on: ubuntu-latest
+    needs: hygiene
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: mobile_app
+          - app: pc_app_flutter
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Record toolchain versions
+        run: |
+          {
+            echo "## ${{ matrix.app }} toolchain"
+            echo '```'
+            flutter --version
+            dart --version
+            echo '```'
+            echo "Expected by pubspec.lock:"
+            echo '```'
+            tail -n 3 pubspec.lock
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install dependencies
+        run: |
+          # On failure, put the resolver error in the step summary. Job logs are
+          # not reachable from every environment (the results-receiver host is
+          # separate from api.github.com), and a bare "exit code 1" at
+          # "Install dependencies" is not enough to act on.
+          if ! flutter pub get; then
+            {
+              echo "### :x: flutter pub get failed in ${{ matrix.app }}"
+              echo "This is almost always an SDK/lockfile mismatch, not a code"
+              echo "problem. Compare the toolchain versions above with the"
+              echo "\`sdks:\` footer of pubspec.lock. Fix by either bumping"
+              echo "FLUTTER_VERSION in this workflow or regenerating the"
+              echo "lockfile with \`flutter pub get\` and committing it."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Verify pubspec.lock is committed and current
+        run: |
+          if ! git diff --exit-code -- pubspec.lock; then
+            echo "::error::pubspec.lock is out of date. Run 'flutter pub get' and commit it."
+            exit 1
+          fi
+
+      - name: Check for banned dependencies
+        run: |
+          set -euo pipefail
+          # The project's contract is "local-first, no telemetry". These
+          # packages would break that promise. See NOTICE and
+          # docs/plans/security-hardening.md · Phase S5.
+          banned='firebase|google-services|analytics|sentry|mixpanel|amplitude|segment|posthog|onesignal|facebook|syncfusion'
+          if grep -qiE "$banned" pubspec.yaml; then
+            echo "::error::pubspec.yaml declares a telemetry/cloud dependency:"
+            grep -inE "$banned" pubspec.yaml
+            exit 1
+          fi
+          echo "No banned dependencies."
+
+      # BLOCKING: real defects. Errors and warnings mean broken code.
+      #
+      # The output is re-emitted as workflow annotations on purpose. Job logs are
+      # served from results-receiver.actions.githubusercontent.com, which is a
+      # different host from api.github.com and is not reachable from every
+      # environment; step summaries turn out not to be readable through the API
+      # either. Annotations ARE, via:
+      #   gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations
+      # so a failure here stays diagnosable without the log archive.
+      - name: Analyze (errors and warnings)
+        run: |
+          # `set +e` is load-bearing. GitHub invokes the default shell as
+          # `bash -e {0}` (on Windows: `bash --noprofile --norc -e -o pipefail {0}`),
+          # so errexit is ALREADY on. Adding `pipefail` without clearing `-e`
+          # makes the failing `flutter analyze | tee` pipeline abort the script
+          # immediately — which is why three successive versions of this step
+          # failed while emitting no annotations at all. The diagnostic code sat
+          # after a line that could never be reached.
+          set +e
+          set -uo pipefail
+
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
+
+          flutter analyze --no-pub --no-fatal-infos --fatal-warnings 2>&1 | tee analyze.txt
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && { echo "flutter analyze clean (errors and warnings) for ${{ matrix.app }}."; exit 0; }
+
+          # Split the levels BEFORE annotating, and lead with a single annotation
+          # carrying the authoritative counts.
+          #
+          # GitHub silently drops workflow-command annotations past a small,
+          # undocumented limit — this job recorded 12 in total, and a previous run
+          # reported one unused_import warning and one unused_field while four
+          # unused imports and two unused fields actually existed. Dumping every
+          # line made that worse, because ~20 info-level findings crowded out the
+          # warnings that actually block.
+          #
+          # So: infos are counted but not annotated (they are the P1-T5 ratchet,
+          # not a gate), and the count annotation is emitted FIRST so it survives.
+          # A count you can trust beats a list you cannot.
+          awk '/^[[:space:]]*(error|warning)[[:space:]]/' analyze.txt > analyze-blocking.txt || true
+          blocking=$(wc -l < analyze-blocking.txt | tr -d ' ')
+          infos=$(awk '/^[[:space:]]*info[[:space:]]/' analyze.txt | wc -l | tr -d ' ')
+          echo "::error::flutter analyze on ${{ matrix.app }}: ${blocking} blocking finding(s) (error/warning, annotated below) and ${infos} info-level finding(s) (not annotated — P1-T5 ratchet). GitHub drops annotations past a small limit, so treat these counts as authoritative and the list as a sample."
+          annotate analyze-blocking.txt 40
+          exit "$status"
+
+      # NON-BLOCKING (for now): style.
+      #
+      # Neither of these can pass on the current tree, and turning them on red
+      # would make CI noise that contributors learn to ignore — the same argument
+      # as the coverage ratchet in backend/pyproject.toml.
+      #
+      # `dart format` has never been run over this codebase (27 mobile screens,
+      # 7 desktop tabs), and `--fatal-infos` fails on the ~130 hardcoded colour
+      # literals and other lint that A-07/A-08 already track as P2-M2/P2-D1.
+      #
+      # P1-T5 is the task that fixes this properly: run the formatter once in a
+      # dedicated commit, clear the lint backlog, then flip both steps to
+      # blocking in the same PR. Until then they report and annotate.
+      - name: Style report (non-blocking until P1-T5)
+        run: |
+          set +e
+          echo "::group::dart format --output=none --set-exit-if-changed lib test"
+          dart format --output=none --set-exit-if-changed lib test
+          fmt=$?
+          echo "::endgroup::"
+
+          echo "::group::flutter analyze --fatal-infos"
+          flutter analyze --no-pub --fatal-infos
+          info=$?
+          echo "::endgroup::"
+
+          if [ "$fmt" -ne 0 ]; then
+            echo "::warning title=Formatting drift::Run 'dart format lib test' in ${GITHUB_WORKSPACE}/${{ matrix.app }}. Becomes blocking at P1-T5."
+          fi
+          if [ "$info" -ne 0 ]; then
+            echo "::warning title=Lint infos::flutter analyze --fatal-infos reported issues. Tracked as A-07/A-08 (P2-M2, P2-D1); becomes blocking at P1-T5."
+          fi
+          exit 0
+
+      - name: Test
+        run: |
+          # `set +e` is load-bearing — see .github/scripts/annotate.sh.
+          set +e
+          set -uo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
+
+          flutter test --no-pub --reporter expanded 2>&1 | tee test.txt
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && { echo "flutter test passed for ${{ matrix.app }}."; exit 0; }
+
+          fails=$(grep -c '\[E\]' test.txt || true)
+          if [ "${fails:-0}" -gt 0 ]; then
+            count_first "flutter test on ${{ matrix.app }}" \
+              "${fails} test(s) failed" \
+              "Test names and assertion detail are annotated below. GitHub drops annotations past a small limit, so treat this count as authoritative and the list as a sample."
+            grep -E '\[E\]|Expected|Actual|Which:|Exception|Error:' test.txt > test-failures.txt || true
+            annotate test-failures.txt 60
+          else
+            # No `[E]` marker but a non-zero exit is almost always a COMPILE error
+            # in lib/ or test/, which flutter test reports without marking a test
+            # as failed. Say so explicitly: "tests failed" sends the next reader to
+            # the wrong file, and there is no Dart toolchain available locally to
+            # check this any other way.
+            count_first "flutter test on ${{ matrix.app }}" \
+              "exit ${status} with no failing-test marker" \
+              "This is usually a COMPILE error in lib/ or test/, not an assertion failure. The tail of the output is annotated below."
+            tail -60 test.txt > test-failures.txt
+            annotate test-failures.txt 60
+          fi
+          exit "$status"
+
+  # ───────────────────────────────────────────────────────────
+  # Android assemble — proves a release APK can actually be built
+  # without publishing anything. Unsigned; signing is release.yml's job.
+  # ───────────────────────────────────────────────────────────
+  android-build:
+    name: Android release assemble
+    runs-on: ubuntu-latest
+    needs: [hygiene, flutter]
+    defaults:
+      run:
+        working-directory: mobile_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # No key.properties here on purpose: build.gradle.kts must fall back to the
+      # debug keystore with a warning rather than failing. That fallback is what
+      # keeps `flutter run --release` working for contributors.
+      - name: Assemble release APK (debug-signed smoke build)
+        run: |
+          # `set +e` is load-bearing — see .github/scripts/annotate.sh.
+          set +e
+          set -uo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/annotate.sh"
+
+          flutter build apk --release 2>&1 | tee build.txt
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && { echo "Release APK assembled (debug-signed smoke build)."; exit 0; }
+
+          count_first "Android release assemble" "exit ${status}" \
+            "Error-marker lines from anywhere in the log are annotated first, then the Gradle FAILURE summary. Gradle prints a task's own diagnostics as it runs and the banner afterwards, so the cause is usually ABOVE the banner. Treat this count as authoritative — GitHub drops annotations past a small limit."
+
+          if grep -qE "FAILURE:|^\* What went wrong:" build.txt; then
+            # THE FIRST VERSION OF THIS EXTRACTOR WAS WRONG, and it is worth being
+            # precise about why. It took everything from the `FAILURE:` banner
+            # onward, on the reasoning that the lines before it are progress noise.
+            # That reported only Gradle's SUMMARY:
+            #     Execution failed for task ':app:minifyReleaseWithR8'.
+            #     > A failure occurred while executing ...R8Task$R8Runnable
+            #        > Compilation failed to complete
+            # Gradle prints a task's OWN output — R8's missing-class diagnostics,
+            # stack traces, "Caused by" chains — as the task runs, and only then
+            # prints the banner. The cause was above it and the extractor discarded
+            # it, which cost a seven-minute CI cycle to discover.
+            #
+            # A second attempt added a raw 70-line window ending at the banner. That
+            # was also wrong, but for the opposite reason: in a real Gradle log that
+            # window is almost entirely "Resolving dependencies..." and progress
+            # spinner lines, and since GitHub drops annotations past a small limit
+            # (S-18g) the noise crowds out the diagnostics that matter.
+            #
+            # So: error-marker lines from ANYWHERE in the log first, then the short
+            # FAILURE summary that names the task. Nothing else.
+            grep -E "Missing class|R8:|ProGuard|proguard|Caused by|ERROR|error:|Exception|OutOfMemory|Java heap|Unexpected|Compilation failed|Dart|kotlin.*error|Execution failed" build.txt | head -30 > build-failure.txt || true
+            markered=$(wc -l < build-failure.txt | tr -d ' ')
+            if [ "${markered:-0}" -eq 0 ]; then
+              echo "----- no recognised error markers; falling back to the log tail -----" >> build-failure.txt
+              tail -60 build.txt | grep -vE '^[[:space:]]*$' >> build-failure.txt
+            fi
+            echo "----- Gradle FAILURE summary -----" >> build-failure.txt
+            awk '/^FAILURE:|^\* What went wrong:/{p=1} p' build.txt >> build-failure.txt
+            annotate build-failure.txt 45
+          else
+            # No Gradle banner means the failure came from Flutter itself — a
+            # missing plugin, a pub problem, or a Kotlin compile error reported
+            # differently. Say which, and annotate the tail.
+            count_first "Android release assemble" "no Gradle FAILURE banner" \
+              "The failure came from flutter tool or Kotlin compilation rather than a Gradle task. The tail of the output is annotated below."
+            tail -80 build.txt > build-failure.txt
+            annotate build-failure.txt 60
+          fi
+          exit "$status"
+
+      - name: Report unsigned-build fallback
+        run: |
+          echo "::notice::Built with the debug keystore. Release signing is exercised in release.yml."
+
+      - name: Upload smoke APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke-apk
+          path: mobile_app/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 3
+
+  # ───────────────────────────────────────────────────────────
+  # Docs link check — docs are a deliverable, so they get a gate.
+  # ───────────────────────────────────────────────────────────
+  docs:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    needs: hygiene
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check relative Markdown links resolve
+        run: |
+          set -uo pipefail
+          # NOTE: deliberately NOT `set -e`. This step is a pipeline of greps, and
+          # grep exits 1 when it finds nothing — which is the normal, correct
+          # outcome for a document with no relative links. Under `set -e` plus
+          # `pipefail` that exit code propagated to `|| fail=1` and the job failed
+          # WITHOUT PRINTING ANYTHING, on a Flutter-generated
+          # LaunchImage.imageset/README.md that contains no links at all.
+          #
+          # That is the third silent-failure found in this workflow (see audit
+          # S-18 and S-06b). The lesson generalises: any CI check built as
+          # `if <pipeline>; then fail; fi` fails closed-to-green or red-to-silent
+          # when a component legitimately produces no output. P1-C5 exists to
+          # audit the rest of them.
+
+          fail=0
+          checked=0
+          links=0
+
+          # Project documentation only. Flutter emits generated README files into
+          # the iOS/macOS asset catalogues; those are vendored boilerplate, not
+          # docs, and are excluded for the same reason .xib files are excluded
+          # from secret scanning.
+          mapfile -t files < <(
+            git ls-files '*.md' \
+              ':(exclude)**/build/**' \
+              ':(exclude)**/Assets.xcassets/**' \
+              ':(exclude)**/ios/Runner/**' \
+              ':(exclude)**/macos/Runner/**'
+          )
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No markdown files found — the pathspec is wrong, not the docs."
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            checked=$((checked + 1))
+            dir=$(dirname "$f")
+
+            # Extract relative links: [text](path) where path has no scheme.
+            # `|| true` on each stage so "nothing matched" is not an error.
+            mapfile -t found < <(
+              {
+                grep -oE '\]\(([^)]+)\)' "$f" 2>/dev/null || true
+              } \
+                | sed -E 's/^\]\(//; s/\)$//' \
+                | { grep -vE '^(https?:|mailto:|#|/)' || true; } \
+                | sed -E 's/#.*$//' \
+                | { grep -v '^$' || true; }
+            )
+
+            for link in "${found[@]}"; do
+              [ -n "$link" ] || continue
+              links=$((links + 1))
+              target="$dir/$link"
+              if [ ! -e "$target" ]; then
+                echo "::error::$f -> broken relative link: $link (resolved to $target)"
+                fail=1
+              fi
+            done
+          done
+
+          echo "Checked $links relative links across $checked markdown files."
+          if [ "$links" -eq 0 ]; then
+            # Not a failure, but worth saying out loud: a docs gate that checked
+            # nothing would otherwise look identical to one that passed.
+            echo "::warning::No relative links were found to check. If docs/ has links, this step's extraction regex has stopped matching."
+          fi
+          exit $fail

@@ -1,0 +1,102 @@
+# Gitleaks configuration for CYPHER.
+#
+# ── READ THIS BEFORE EDITING ────────────────────────────────────────────────
+# The global allowlist key is SINGULAR: `[allowlist]`.
+#
+# An earlier revision of this file used `[[allowlists]]` (plural, array of
+# tables). That key does not exist in gitleaks v8.21.2's ViperConfig struct —
+# only `Allowlist struct{...}` does — so viper dropped it silently and the
+# allowlist had no effect at all. The blocking CI scan then failed on
+# credentials this file was supposed to cover.
+#
+# Upstream knows this is confusing: their own generated config carries the
+# comment `# TODO: change to [[allowlists]]`, i.e. the plural form is a future
+# intent, not the current schema. If you bump the pinned gitleaks version in
+# .github/workflows/ci.yml, re-check config/config.go at that tag before
+# assuming this still parses.
+#
+# A silently ignored allowlist is the same failure class as audit finding S-18
+# (a `git grep` guard that never ran because of an invalid flag): a security
+# control that fails without telling anyone. Prefer the narrowest entry that
+# works, and verify it by introducing the secret on a scratch branch.
+#
+# ── WHY AN ALLOWLIST IS NEEDED AT ALL ───────────────────────────────────────
+# Two credentials were committed to this public repository and have been removed
+# from the working tree:
+#
+#   · a Firebase API key (mobile_app/android/app/google-services.json,
+#     project cypher-e7712) — rule `gcp-api-key`
+#   · `"master_password": "emerald-admin"` in pc_app_flutter/backend/metadata.json
+#     — rule `hashicorp-tf-password`
+#
+# Both are *quoted by value* in docs/AUDIT.md and CHANGELOG.md, because an audit
+# that will not name the credential it found is not actionable: a maintainer has
+# to know exactly which key to rotate. Documenting a retired secret must not trip
+# the scanner, or the alternative is to stop documenting them.
+#
+# Both remain in git history. Purging needs `git filter-repo` and rewrites every
+# SHA, so it is tracked separately as ROADMAP.md · P1-B1. Until then CI runs two
+# scans: the current tree (blocking, configured here) and full history
+# (non-blocking annotation).
+#
+# ── THE TRADE-OFF, STATED PLAINLY ───────────────────────────────────────────
+# Entries below are matched against the *secret value*, not the file path, and
+# the global allowlist is OR-combined. So these two exact strings are permitted
+# ANYWHERE in the tree, not only in the two documents.
+#
+# That is deliberate and acceptable: both are dead credentials whose only correct
+# future is rotation, and scoping by path instead would exempt the whole of
+# docs/AUDIT.md and CHANGELOG.md — meaning a genuinely new secret pasted into the
+# audit would sail through. Exempting two dead strings is the narrower risk.
+#
+# Do NOT add a *secret value* here to make a scan pass without saying which audit
+# finding it belongs to and whether it has been rotated.
+#
+# ── GENERATED APPLE INTERFACE BUILDER FILES ─────────────────────────────────
+# `paths` below is the ONE exception to "match the secret, not the file", and it
+# exists because of a pure false positive: `mobile_app/macos/Runner/Base.lproj/
+# MainMenu.xib` is Apple's Interface Builder template that ships with every
+# Flutter macOS project. It contains 35 occurrences of
+#
+#     key="keyEquivalentModifierMask"
+#
+# which the `generic-api-key` rule reads as `key` + `=` + a 27-character
+# high-entropy-looking value. `keyEquivalentModifierMask` is an AppKit attribute
+# name, not a credential. Verified by running gitleaks' own v8.21.2 rule set
+# (fetched from the upstream tag) across the tracked tree: these 35 are the only
+# findings that survive the rule's entropy threshold and its 1,476 stopwords.
+#
+# Excluding generated Interface Builder XML is the same judgement gitleaks' own
+# default config makes for node_modules, lockfiles, minified vendor JS and the
+# gradle/maven wrappers. Nobody stores a secret in a .xib, and iOS will add
+# .storyboard files at Phase 4, so both are covered now.
+#
+# Keep this list to generated/vendored formats. Never add a source directory.
+
+title = "CYPHER gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Retired credentials quoted by value in docs/AUDIT.md and CHANGELOG.md (audit S-06), plus generated Apple Interface Builder files. Both credentials must be rotated; both are still in git history until P1-B1."
+
+# NOTE: the global allowlist is OR-combined, so a finding is suppressed if it
+# matches `paths` OR `regexes`. That is why `paths` is kept to generated formats
+# only — see the section above.
+paths = [
+    '''(?i)\.xib$''',
+    '''(?i)\.storyboard$''',
+]
+
+regexes = [
+    # Firebase API key from the deleted google-services.json — audit S-06.
+    '''AIzaSyCmdZYTYwrSB34q7gSI2yA8F6KGf_kH8Mk''',
+    # master_password from the deleted metadata.json field — audit S-06.
+    '''emerald-admin''',
+    # The retired hardcoded node token literal — audit S-01. Quoted in the audit,
+    # the changelog, and in code comments that explain what replaced it. The
+    # separate hygiene gate in ci.yml still fails the build if this literal is
+    # ever *assigned* to a token variable anywhere in the tree.
+    '''cypher-internal-pc-app-token(?:-2024)?''',
+]

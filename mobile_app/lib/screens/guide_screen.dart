@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../theme/colors.dart';
-import '../theme/app_theme.dart';
 
 class GuideScreen extends StatelessWidget {
   const GuideScreen({super.key});

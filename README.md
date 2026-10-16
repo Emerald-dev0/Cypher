@@ -1,572 +1,343 @@
-# 🛡️ CYPHER — Local Network PC Remote Control
+<div align="center">
 
-> **Control your PC from anywhere on the same WiFi. No internet. No servers. 100% local.**
+# CYPHER
 
-CYPHER is a **full-featured remote control system** for Windows PCs, allowing you to:
-- 📱 Control your PC from your Android phone
-- 🎥 Record screen with custom quality & frame rates
-- 📁 Transfer files seamlessly (upload/download)
-- ⌨️ Type, hotkeys, click, and navigate remotely
-- 🔒 Secure pairing system with guest access
-- 🎮 Launch apps, manage processes, control power
-- 📋 Sync clipboard, view screenshots, stream live desktop
-- ⚡ Works on WiFi hotspots, USB tethering, and local LANs
+**Your phone. Your PC. Same room, same network, no cloud.**
 
-**No cloud. No subscriptions. No data tracking. Pure local network magic.**
+Move files, control playback, grab a screenshot, lock the machine — without a
+cable, an account, or a vendor sitting between you and your own computer.
 
----
+[![CI](https://github.com/Emerald-dev0/Cypher/actions/workflows/ci.yml/badge.svg)](https://github.com/Emerald-dev0/Cypher/actions/workflows/ci.yml)
+[![Release](https://github.com/Emerald-dev0/Cypher/actions/workflows/release.yml/badge.svg)](https://github.com/Emerald-dev0/Cypher/actions/workflows/release.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-informational.svg)](#platform-support)
 
-## ✨ Key Features
-
-### 🎮 **Remote Control**
-- ✅ Full screenshot capture
-- ✅ Live desktop streaming (MJPEG)
-- ✅ Remote keyboard (type text + hotkeys)
-- ✅ Clipboard sync (bidirectional)
-- ✅ Open URLs in browser
-- ✅ Volume control + media playback
-
-### 🎥 **Screen Recording**
-- ✅ Full screen or window-specific recording
-- ✅ Multiple quality presets (480p, 720p, 1080p)
-- ✅ Adjustable frame rates (15, 24, 30, 60 FPS)
-- ✅ Pause/resume mid-recording
-- ✅ Auto-download after recording
-- ✅ 3-second countdown before start
-
-### 📁 **File Management**
-- ✅ Browse shared folders from phone
-- ✅ Upload files to PC
-- ✅ Download single or batch (ZIP)
-- ✅ Chunked transfers for large files (100GB+)
-- ✅ Real-time progress tracking
-- ✅ File preview (text, images, PDFs, video, audio)
-- ✅ Rename/move files
-- ✅ Delete with confirmation
-
-### 💾 **System Control**
-- ✅ Power commands: shutdown, restart, sleep, hibernate, lock
-- ✅ Process manager: view, search, kill processes
-- ✅ App launcher: install & launch applications
-- ✅ System monitoring: CPU, RAM, disk usage (live)
-- ✅ Battery status & network info
-- ✅ Uptime tracking
-
-### 🔐 **Security**
-- ✅ 6-digit pairing code (fresh each session)
-- ✅ Token-based authentication
-- ✅ Guest access with folder sandboxing
-- ✅ Session expiry & revocation
-- ✅ Activity logging
-- ✅ Path traversal protection
-- ✅ Admin process protection
-
-### 🌐 **Connectivity**
-- ✅ WiFi hotspot (Android 192.168.43.x)
-- ✅ Windows Mobile Hotspot (192.168.137.x)
-- ✅ USB tethering (192.168.42.x)
-- ✅ Local LAN/WiFi with mDNS discovery
-- ✅ Manual IP entry fallback
-- ✅ Smart auto-reconnect
-- ✅ Wake-on-LAN support
-
-### ⚙️ **Advanced Features**
-- ✅ Clipboard history (last 50 items)
-- ✅ Activity timeline view
-- ✅ Activity log & notifications
-- ✅ Screenshot save to phone
-- ✅ Screen recording pause/resume
-- ✅ Multi-window management
-- ✅ Guest session management
-- ✅ PC pairing code rotation
+</div>
 
 ---
 
-## 📦 Tech Stack
+## ⚠️ Read this before installing
 
-### **Frontend (Mobile)**
-- **Framework:** Flutter (Dart)
-- **State Management:** Provider
-- **Networking:** HTTP + WebSocket
-- **Storage:** Shared Preferences + Local JSON
-- **Discovery:** mDNS (nsd package)
-- **UI Components:** Custom Cypher Design System
+CYPHER is **pre-release software under active hardening**. An audit in October
+2026 ([`docs/AUDIT.md`](docs/AUDIT.md)) found 43 defects, including a published
+authentication token and a file API that did not enforce the shared-folder
+boundary. The filesystem sandbox, public-route decorator, CORS/Host allowlist,
+and Syncfusion removal have shipped; remaining work is in
+[`ROADMAP.md`](ROADMAP.md).
 
-### **Backend (PC)**
-- **Server:** Python 3.12 + Flask + Flask-SocketIO
-- **System API:** pyautogui, psutil, win32, pycaw
-- **Media:** OpenCV (cv2), mss, ffmpeg
-- **Discovery:** Zeroconf (mDNS) + UDP beacon
-- **File Transfer:** Streaming + chunking
-- **Recording:** Hardware-accelerated screen capture
+**What that means for you today:**
 
-### **PC Companion App**
-- **Framework:** Flutter for Windows
-- **Backend:** Python subprocess (auto-managed)
-- **UI:** 7-tab dashboard (Home, Files, Transfers, Activity, Health, Security, Settings)
+- 🟠 **Do not run the node on a network you do not trust** — hotel, café,
+  conference or campus WiFi. Traffic is still **unencrypted HTTP** on the LAN
+  (TLS is [P2-S1](docs/plans/security-hardening.md)). A paired device can only
+  read **shared folders** (sandbox, P1-S2).
+- 🟠 **Traffic is unencrypted.** LAN HTTP means anyone on the same network can
+  sniff the auth token. TLS is [P2-S1](docs/plans/security-hardening.md).
+- 🟠 **Builds from before October 2026 must be uninstalled**, not updated. They
+  shipped a hardcoded token that was public in this repository. Delete
+  `%APPDATA%\Cypher\paired_devices.json` too. See [`SECURITY.md`](SECURITY.md).
+- 🟢 **On your own home WiFi, with devices you own, it works** — and it works
+  without touching the internet.
+
+We would rather you know this than discover it. The project is not being publicly
+promoted until Phase 1 closes.
 
 ---
 
-## 🚀 Quick Start
+## What it does
 
-### **Prerequisites**
-- **PC:** Windows 10+ with Python 3.12
-- **Phone:** Android 10+ 
-- **Network:** Both on same WiFi (or USB tethering)
+Pair your phone to your PC with a six-digit code shown on the PC's screen. Then:
 
-### **Setup**
+| | |
+| --- | --- |
+| 📁 **Files** | Browse shared folders, upload, download, batch-ZIP, preview text/images/PDF/video/audio, chunked transfers for very large files |
+| ⌨️ **Control** | Remote keyboard, hotkeys, trackpad, clicks, scroll — across monitors |
+| 🖥️ **Screen** | Screenshot on demand, live MJPEG streaming, screen recording with quality and frame-rate control, pause/resume |
+| 📋 **Clipboard** | Bidirectional text and image sync, with history |
+| 🎵 **Media** | Volume, mute, play/pause, next/previous |
+| ⚡ **Power** | Lock, sleep, hibernate, restart, shutdown |
+| 📊 **System** | Live CPU/RAM/disk/battery, process list and kill, app launcher, uptime, network info |
+| 🔗 **Guest links** | Share one folder with someone for a set time, without giving them your PC |
+| 🌐 **Wake-on-LAN** | Boot a machine from your phone |
 
-#### **1. PC Setup**
+**No account. No subscription. No telemetry. No internet required.**
+
+The only outbound request the app ever makes is the update check *you* trigger,
+to `api.github.com`. Everything else stays on your network. The full accounting
+is in [`docs/product/privacy.md`](docs/product/privacy.md).
+
+---
+
+## Platform support
+
+| | Node (the PC being controlled) | Client (the controller) |
+| --- | --- | --- |
+| **Windows 10/11** | ✅ Works — primary platform | ✅ Desktop shell |
+| **Android 10+** | — | ✅ Works — primary client |
+| **Linux** | 🚧 Files, transfers and monitoring land in [Phase 3](ROADMAP.md); input and capture follow | 🔵 Compiles, untested |
+| **macOS** | ❌ Not implemented | 🚧 [Phase 4](ROADMAP.md) |
+| **iOS / iPadOS** | — | 🚧 [Phase 4](ROADMAP.md) — needs Local Network entitlements |
+| **CLI** | — | 🚧 [Phase 3](ROADMAP.md) |
+
+Honest detail per platform, including the Wayland capture problem and the iOS
+Bonjour requirement: [`docs/plans/cross-platform.md`](docs/plans/cross-platform.md).
+
+---
+
+## Install
+
+> **No signed release has been published yet.** The pipeline that produces them
+> is [`release.yml`](.github/workflows/release.yml); the first artefacts land when
+> Phase 1 closes. Until then, build from source.
+
+### Requirements
+
+- **PC:** Windows 10 or 11, Python 3.11+ (3.12 recommended)
+- **Phone:** Android 10+ (API 24+)
+- **Network:** both on the same WiFi, a hotspot, or a USB tether
+
+### 1. Start the node on your PC
+
 ```bash
-# Clone repo
-git clone https://github.com/yourusername/cypher.git
-cd cypher
+git clone https://github.com/Emerald-dev0/Cypher.git
+cd Cypher/pc_app_flutter/backend
 
-# Install Python dependencies
-pip install -r pc_app_flutter/backend/requirements.txt
+python -m venv .venv
+.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
 
-# Run the backend
-python pc_app_flutter/backend/core/server.py
+python service.py
+```
 
-# Or run the Flutter PC app (uses backend subprocess)
-cd pc_app_flutter
+The node listens on port 5000 and advertises itself via mDNS. Pairing code is
+shown in the **desktop shell** (sidebar), not printed to stdout (that was a
+credential leak). Troubleshooting: [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
+
+Or run the desktop shell, which manages the node for you:
+
+```bash
+cd ../            # pc_app_flutter/
+flutter pub get
 flutter run -d windows
 ```
 
-The PC app will:
-1. Start the Python backend automatically
-2. Display the 6-digit pairing code
-3. Show the dashboard after pairing
+### 2. Install the app on your phone
 
-#### **2. Phone Setup**
-```bash
-# Install Flutter (if not installed)
-# https://flutter.dev/docs/get-started/install
-
-# Run the mobile app
-cd mobile_app
-flutter pub get
-flutter run
-```
-
-#### **3. First Connection**
-1. **Open CYPHER on phone** → "Find Your PC"
-2. **Auto-discovery** finds your PC (mDNS or subnet scan)
-3. **Tap your PC** → "Pairing screen"
-4. **Enter 6-digit code** from PC dashboard
-5. **Connected!** → Home screen appears
-
----
-
-## 📋 Connection Methods
-
-| Method | Protocol | Range | Auto-Discovery |
-|--------|----------|-------|-----------------|
-| **WiFi Hotspot (Android)** | Local network | 192.168.43.x | ✅ mDNS + Subnet |
-| **WiFi Hotspot (Windows)** | Local network | 192.168.137.x | ✅ mDNS + Subnet |
-| **USB Tethering** | Local network | 192.168.42.x | ✅ Subnet scan |
-| **Local LAN/WiFi** | TCP/IP | Any subnet | ✅ mDNS + Subnet |
-| **Manual IP** | TCP/IP | Any IP | ⚠️ User entry |
-
-**Discovery Priority:**
-1. **mDNS (fastest)** — Broadcast service discovery
-2. **UDP Beacon** — Custom beacon broadcast (fallback)
-3. **Subnet Scan** — Ping candidate IPs
-4. **Manual Entry** — User types IP directly
-
----
-
-## 🔒 Security
-
-### **Pairing Mechanism**
-- 6-digit code changes per session
-- Code displayed only on PC
-- One-time pairing per device
-- Token-based auth after pairing
-
-### **File Access**
-- Admin-enforced shared folders only
-- Path traversal protection on all endpoints
-- System folder write protection (`C:\Windows`, `Program Files`, etc.)
-- Guest sandboxing with folder limits
-
-### **Guest Access**
-- Temporary tokens with expiry
-- Limited folder scope
-- Read-only or upload toggles
-- Session revocation anytime
-
-### **Network**
-- **No internet required** — 100% local
-- **No cloud servers** — No external dependencies
-- **No data tracking** — Activity logged locally only
-- **Encrypted recommended** — Use WPA2+ WiFi
-
----
-
-## 📁 Project Structure
-
-```
-cypher/
-├── README.md                          # This file
-├── Architecture.md                    # System design & components
-├── Pairing Specification.md           # Pairing protocol details
-├── File transfer protocol.md          # File transfer implementation
-├── UI Design System.md                # Design tokens & components
-├── SYSTEM_AUDIT.md                    # Network connectivity audit
-├── FEATURE_VERIFICATION.md            # Feature checklist & status
-│
-├── mobile_app/                        # Flutter Android app
-│   ├── lib/
-│   │   ├── main.dart                 # App entry + routing
-│   │   ├── providers/                # State management (Provider)
-│   │   │   ├── connection_provider.dart
-│   │   │   ├── file_provider.dart
-│   │   │   ├── system_provider.dart
-│   │   │   └── app_provider.dart
-│   │   ├── services/                 # API & local services
-│   │   │   ├── api_service.dart      # HTTP endpoints
-│   │   │   ├── discovery_service.dart # mDNS + subnet scan
-│   │   │   ├── storage_service.dart  # Local persistence
-│   │   │   ├── clipboard_service.dart # Clipboard history
-│   │   │   └── update_service.dart
-│   │   ├── screens/                  # 22+ UI screens
-│   │   │   ├── splash_screen.dart
-│   │   │   ├── connection_screen.dart
-│   │   │   ├── pairing_screen.dart
-│   │   │   ├── home_screen.dart
-│   │   │   ├── file_browser_screen.dart
-│   │   │   ├── controls_screen.dart
-│   │   │   ├── screen_recorder_screen.dart
-│   │   │   ├── process_manager_screen.dart
-│   │   │   ├── app_launcher_screen.dart
-│   │   │   ├── clipboard_screen.dart
-│   │   │   ├── clipboard_history_screen.dart
-│   │   │   ├── wake_on_lan_screen.dart
-│   │   │   └── ... (15+ more screens)
-│   │   ├── widgets/                  # Reusable UI components
-│   │   │   ├── cypher_button.dart
-│   │   │   ├── cypher_card.dart
-│   │   │   ├── stat_ring.dart
-│   │   │   ├── file_icon.dart
-│   │   │   └── ... (10+ more widgets)
-│   │   └── theme/                    # Design system
-│   │       ├── colors.dart
-│   │       └── app_theme.dart
-│   ├── pubspec.yaml                  # Dependencies
-│   └── android/                       # Android config
-│
-├── pc_app_flutter/                    # Flutter Windows companion app
-│   ├── lib/
-│   │   ├── main.dart                 # Windows app entry
-│   │   ├── screens/
-│   │   │   ├── dashboard_screen.dart # 7-tab dashboard
-│   │   │   └── tabs/                 # Individual tabs
-│   │   │       ├── home_tab.dart
-│   │   │       ├── files_tab.dart
-│   │   │       ├── transfers_tab.dart
-│   │   │       ├── activity_tab.dart
-│   │   │       ├── health_tab.dart
-│   │   │       ├── security_tab.dart
-│   │   │       └── settings_tab.dart
-│   │   ├── services/
-│   │   │   ├── bridge_service.dart   # Local HTTP to backend
-│   │   │   ├── backend_manager.dart  # Python subprocess mgmt
-│   │   │   └── theme_service.dart
-│   │   └── theme/
-│   └── pubspec.yaml
-│
-├── pc_app_flutter/backend/
-│   ├── core/
-│   │   ├── server.py                 # 2800-line Flask server
-│   │   │   # 60+ endpoints covering all features
-│   │   │   # Power, files, processes, recording, etc.
-│   │   ├── discovery.py              # mDNS + UDP beacon
-│   │   ├── recording_overlay.py      # Screen recording
-│   │   └── guest_manager.py          # Guest sessions
-│   ├── requirements.txt               # Python deps
-│   └── README.md                      # Backend docs
-│
-└── docs/                              # Additional documentation
-    ├── SYSTEM_AUDIT.md
-    ├── FEATURE_VERIFICATION.md
-    └── Architecture.md
-```
-
----
-
-## 🛠️ Development
-
-### **Install Dependencies**
-
-**Mobile:**
 ```bash
 cd mobile_app
 flutter pub get
+flutter build apk --release
+# → build/app/outputs/flutter-apk/app-release.apk
 ```
 
-**Backend:**
+Sideload the APK. For development, `flutter run` with a device attached.
+
+> Release builds need a signing key. Copy
+> `android/key.properties.example` to `android/key.properties` — without it the
+> build falls back to the debug keystore, which is fine for development and
+> rejected by CI for release. See [`docs/RELEASES.md`](docs/RELEASES.md).
+
+### 3. Pair
+
+1. Phone → **Find your PC**. Discovery lists the node; tap it.
+2. Enter the six-digit code from the PC screen (or scan its QR code).
+3. Done. The phone keeps a token and reconnects automatically.
+
+If discovery finds nothing, type the address manually — it is printed by the
+node. Troubleshooting is in [`docs/RELEASES.md`](docs/RELEASES.md) and the
+connection matrix in [`docs/plans/test-matrix.md`](docs/plans/test-matrix.md) §1.
+
+---
+
+## How it connects
+
+| Transport | Typical range | Discovery |
+| --- | --- | --- |
+| Same WiFi router | Any private subnet | mDNS → UDP beacon → manual |
+| Android hotspot (phone is AP) | `192.168.43.x` | mDNS + subnet |
+| Windows Mobile Hotspot (PC is AP) | `192.168.137.x` | mDNS + subnet |
+| USB tethering | `192.168.42.x` | Subnet — works with WiFi off |
+| Manual entry | Anything | — |
+
+Discovery tries mDNS first, falls back to a UDP beacon, then to a subnet scan,
+then asks you. Interface selection prioritises tethering over hotspots over LAN,
+and excludes loopback and APIPA addresses.
+
+**Not over the internet.** That is deliberate. Off-LAN access arrives in
+[Phase 5](ROADMAP.md) as a **self-hostable relay** that forwards end-to-end
+encrypted bytes and never requires an account —
+[`docs/plans/relay-cloud.md`](docs/plans/relay-cloud.md).
+
+---
+
+## Architecture
+
+```
+┌──────────────────────┐         ┌──────────────────────────┐
+│  Mobile client       │         │  Desktop shell (Flutter)  │
+│  Flutter / Android   │         │  spawns and supervises    │
+│                      │         │  the node over loopback   │
+└──────────┬───────────┘         └────────────┬─────────────┘
+           │                                  │
+           │   one HTTP + Socket.IO API       │
+           │   X-Auth-Token per device        │
+           ▼                                  ▼
+┌────────────────────────────────────────────────────────────┐
+│  Node (Python) — headless                                   │
+│  Flask + Flask-SocketIO · psutil · mss/OpenCV · zeroconf    │
+│  files · input · capture · audio · power · processes        │
+└────────────────────────────────────────────────────────────┘
+```
+
+One protocol, two clients. The desktop shell is not privileged — it
+authenticates with a per-install loopback token and is subject to the same rules
+as a paired phone.
+
+| Component | Path | Stack |
+| --- | --- | --- |
+| Node | `pc_app_flutter/backend/` | Python 3.11+, Flask, Flask-SocketIO, psutil, Pillow, mss, OpenCV, zeroconf |
+| Desktop shell | `pc_app_flutter/lib/` | Flutter for Windows/Linux, `window_manager`, Provider |
+| Mobile client | `mobile_app/lib/` | Flutter, Provider, `nsd`, `mobile_scanner`, `file_picker` |
+| Website | `website/` | Static HTML → GitHub Pages |
+
+Detail: [`docs/architecture/overview.md`](docs/architecture/overview.md),
+[`pairing.md`](docs/architecture/pairing.md),
+[`file-transfer.md`](docs/architecture/file-transfer.md),
+[`design-system.md`](docs/architecture/design-system.md).
+
+---
+
+## Security
+
+The controls that exist **today**:
+
+- ✅ Six-digit pairing code from `secrets`, regenerated every session, **rotated
+  on every successful pairing** so it is single-use
+- ✅ Brute-force throttle: 5 attempts per 5 minutes per source IP, then a 15-minute
+  lockout — checked *before* the comparison
+- ✅ Constant-time code comparison (`hmac.compare_digest`)
+- ✅ Per-install generated loopback token at `0600` — no published secret
+- ✅ 32-byte device tokens
+- ✅ Global authentication: every route is protected unless explicitly public
+- ✅ Guest sessions with `secrets.token_urlsafe(32)`, expiry, folder scoping and
+  an access log
+- ✅ An on-screen recording indicator, so anyone in the room knows when capture is
+  active
+- ✅ No telemetry, no analytics, no crash upload, enforced by a CI gate
+- ✅ Android backup and device migration disabled, so a token cannot be restored
+  onto a new handset
+
+The controls that are **not yet done**, in priority order:
+
+| | Gap | Task |
+| --- | --- | --- |
+| 🔴 | Shared-folder boundary is not enforced on the file routes | [P1-S2](docs/plans/security-hardening.md#3-the-filesystem-sandbox-p1-s2--highest-priority) |
+| 🔴 | CORS is a wildcard and the `Host` header is not validated (DNS rebinding) | P1-S4 |
+| 🟠 | Transport is cleartext HTTP; no node authentication | P2-S1 |
+| 🟠 | No capability scopes — a paired device can do everything | P2-S5 |
+| 🟠 | Device tokens never expire; `/paired-devices` returns raw tokens | P2-S6 |
+| 🟠 | The node auto-elevates to Administrator on first run | P2-S4 |
+| 🟠 | Keystroke text is written to the activity log | P3-S1 |
+
+The full threat model, the target authentication design and the verification
+tests for each control are in
+[`docs/plans/security-hardening.md`](docs/plans/security-hardening.md).
+
+**Found a vulnerability?** Please use the private channel in
+[`SECURITY.md`](SECURITY.md) — not a public issue.
+
+### A position on surveillance
+
+CYPHER is a remote-control tool, which makes it dual-use by nature. We have chosen
+a side:
+
+- A **persistent, non-dismissable on-screen indicator** whenever the screen is
+  captured, streamed or recorded.
+- **No stealth mode.** Not as a setting, not as a flag, not for "kiosk use".
+- Pairing requires **physical presence** at the PC to read the code. There is no
+  remote approval, and there will not be one.
+- CYPHER is not designed, licensed or supported for covert monitoring of another
+  person's device.
+
+The reasoning is in
+[`docs/product/features-and-applications.md`](docs/product/features-and-applications.md#42-anti-surveillance-as-a-feature).
+
+---
+
+## Documentation
+
+| | |
+| --- | --- |
+| [`AGENTS.md`](AGENTS.md) | The technical contract — repo map, commands, invariants, known traps. **Read this before contributing.** |
+| [`ROADMAP.md`](ROADMAP.md) | What is planned, in what order, with stable task IDs |
+| [`docs/AUDIT.md`](docs/AUDIT.md) | The October 2026 audit: 43 findings with evidence |
+| [`docs/`](docs/README.md) | Everything else — architecture, plans, product |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, conventions, PR expectations |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting and supported versions |
+| [`docs/RELEASES.md`](docs/RELEASES.md) | How releases are cut and verified |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history |
+
+---
+
+## Development
+
 ```bash
-pip install -r pc_app_flutter/backend/requirements.txt
+# Node
+cd pc_app_flutter/backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+ruff check . && pytest tests -q
+python service.py
+
+# Clients
+cd mobile_app && flutter pub get && flutter analyze --fatal-infos && flutter test
+cd ../pc_app_flutter && flutter pub get && flutter analyze --fatal-infos && flutter test
 ```
 
-### **Run in Development**
+CI runs all of the above on every PR, plus CodeQL, Semgrep, Gitleaks over full
+git history, a repository-hygiene gate and an Android release assemble. See
+[`.github/workflows/`](.github/workflows/).
 
-**Mobile:**
-```bash
-flutter run
-# or specific device
-flutter run -d emulator-5554
-```
-
-**Backend (standalone):**
-```bash
-python pc_app_flutter/backend/core/server.py
-# Output:
-# --------------------------------------------------
-# CYPHER PC SERVER
-# IP: 192.168.43.2
-# PAIRING KEY: 123456
-# --------------------------------------------------
-```
-
-**PC App (auto-manages backend):**
-```bash
-cd pc_app_flutter
-flutter run -d windows
-```
-
-### **Testing**
-
-**Quick test checklist:**
-- [ ] WiFi hotspot connection (mDNS)
-- [ ] USB tethering connection
-- [ ] File upload (small + large)
-- [ ] File download (small + large)
-- [ ] Screenshot capture
-- [ ] Screen recording (pause/resume)
-- [ ] Power commands (lock, sleep)
-- [ ] Process kill with confirmation
-- [ ] App launcher
-- [ ] Clipboard sync
-- [ ] Guest access with expiry
-- [ ] Pairing code rotation
+Runtime state lives outside the repo: `%APPDATA%\Cypher\` on Windows,
+`~/.config/cypher/` on Linux, `~/Library/Application Support/Cypher/` on macOS.
 
 ---
 
-## 🔧 Configuration
+## Contributing
 
-### **Shared Folders (PC)**
-Edit in PC app Settings or `server.py`:
-```python
-SHARED_FOLDERS = [
-    "C:\\Users\\YourName\\Downloads",
-    "C:\\Users\\YourName\\Documents",
-    "D:\\Media",
-]
-```
+Issues and PRs welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and look
+for `good first issue`.
 
-### **Recording Settings**
-Change in Screen Recorder mobile screen:
-- Quality: Low (480p), Medium (720p), High (1080p)
-- FPS: 15, 24, 30, 60
-- Audio: toggle on/off
-- Source: Full screen or specific window
+The highest-leverage places to help right now:
 
-### **Auto-Connect**
-Enable in Settings → "Smart Auto-Connect"
-- Automatically reconnects on app launch
-- Requires successful pairing first
-- Skips manual connection screen
+- **Node test suite** ([P1-T1](ROADMAP.md)) — the best way to learn the codebase
+- **Design-token migration** ([P2-M2](docs/plans/rebuild-mobile-ui.md)) — mechanical,
+  reviewable in small chunks, high visible impact
+- **Linux: files, transfers, monitoring** ([P3-L1](docs/plans/cross-platform.md)) —
+  pure `psutil`, no platform-specific code
+- **CLI client** ([P3-C1](ROADMAP.md)) — well-bounded, and it doubles as an API
+  test harness
+- **Troubleshooting docs** ([P1-C3](ROADMAP.md)) — especially if you just went
+  through setup yourself
+
+Please read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ---
 
-## 📊 Architecture Highlights
+## License
 
-### **Discovery System** (3-layer fallback)
-1. **mDNS** — Service broadcast (`_cypher._tcp`)
-2. **UDP Beacon** — Custom broadcast every 3 seconds
-3. **Subnet Scan** — Ping 192.168.43.x, 192.168.137.x, 192.168.42.x ranges
+Apache License 2.0 — see [`LICENSE`](LICENSE). Third-party attributions in
+[`NOTICE`](NOTICE).
 
-### **File Transfer** (Streaming + Chunking)
-- **Small files (<100MB):** Direct stream
-- **Large files (100MB+):** 1MB chunks with progress
-- **Batch download:** Server ZIP → client streams
-
-### **Recording System** (Hardware + Software)
-- **Screen Capture:** `mss` (fast) or OpenCV (fallback)
-- **Encoding:** ffmpeg with quality presets
-- **Streaming:** Save to temp file, stream on request
-
-### **Authentication** (Token-based)
-1. User enters 6-digit code from PC
-2. Backend validates, issues token
-3. Phone saves token locally
-4. All requests include `X-Auth-Token` header
-5. Token revoked on unpair
-
-### **Screen Streaming** (Live MJPEG)
-- Continuous frame capture
-- JPEG compression per frame
-- HTTP chunked transfer
-- Real-time latency ~100-200ms
+The Apache-2.0 grant covers copyright only. It does **not** grant any right to
+the CYPHER name or marks; forks must rebrand. See
+[`docs/product/branding.md`](docs/product/branding.md).
 
 ---
 
-## 📱 Mobile App Routes
+## Acknowledgements
 
-```
-/                     → Splash (auto-navigate)
-/onboarding          → First-time setup
-/setup               → Device pairing setup
-/connection          → Discover & connect to PC
-/pairing             → Enter pairing code
-/home                → Main dashboard (2 tabs)
-/browser             → File browser
-/preview             → File preview
-/controls            → Remote control panel
-/clipboard           → Clipboard sync
-/clipboard-history   → Clipboard history viewer
-/guest               → Guest access management
-/activity            → Activity log
-/notifications       → System notifications
-/settings            → User preferences
-/processes           → Process manager
-/apps_launcher       → App launcher & closer
-/recorder            → Screen recording
-/transfers           → Active transfers
-/wol                 → Wake-on-LAN
-/guide               → Setup & FAQ
-/send                → Upload to PC
-/phone_browser       → Browse phone files
-/drop                → CypherDrop (local share)
-```
+Built by [Emerald Dev](https://github.com/Emerald-dev0) and contributors.
 
----
-
-## 🐛 Troubleshooting
-
-### **PC Not Found During Discovery**
-1. ✅ Both devices on same WiFi
-2. ✅ PC firewall allows port 5000
-3. ✅ Enable "file and printer sharing"
-4. ✅ Try manual IP entry as fallback
-
-### **Connection Drops**
-1. ✅ Check WiFi signal strength
-2. ✅ Verify PC still running CYPHER
-3. ✅ Heartbeat auto-detects & reconnects (8 second interval)
-4. ✅ Manual reconnect via "Scan again" button
-
-### **Large File Transfer Stalls**
-1. ✅ Check network bandwidth
-2. ✅ Pause other downloads
-3. ✅ Try chunked transfer endpoint
-4. ✅ Increase timeout in settings
-
-### **Recording Fails**
-1. ✅ Verify PC has 2GB+ free space
-2. ✅ Check ffmpeg installed (`ffmpeg -version`)
-3. ✅ Try lower quality preset
-4. ✅ Restart backend
-
-### **Pairing Code Wrong**
-1. ✅ Code changes on PC restart
-2. ✅ Code is 6 digits only
-3. ✅ Check for typos
-4. ✅ Look at PC dashboard in Settings tab
-
----
-
-## 🚀 Performance Tips
-
-| Action | Optimization |
-|--------|---------------|
-| **Large files** | Use chunked download endpoint |
-| **Slow WiFi** | Lower recording quality to 480p |
-| **High latency** | Reduce FPS to 15, increase timeout |
-| **Many processes** | Filter by name instead of full list |
-| **Battery drain** | Disable clipboard history sync |
-
----
-
-## 📈 Future Roadmap
-
-### **Phase 2** (Medium Effort)
-- [ ] Remote mouse control (trackpad)
-- [ ] Scheduled power commands
-- [ ] System notification mirroring
-- [ ] Activity timeline UI
-- [ ] Multi-monitor awareness
-- [ ] System tray quick commands
-
-### **Phase 3** (Advanced)
-- [ ] Action macros ("Gaming Mode", etc.)
-- [ ] Multi-device dashboard
-- [ ] Custom hotkey bindings
-- [ ] Real-time performance graphs
-- [ ] Screen sharing for demos
-
----
-
-## 🤝 Contributing
-
-Pull requests welcome! Areas for contribution:
-- Bug fixes & optimizations
-- New screens & features
-- Documentation improvements
-- Platform support (macOS, Linux)
-- Language translations
-
----
-
-## 📄 License
-
-MIT License — See LICENSE file
-
----
-
-## 👨‍💻 About
-
-**CYPHER** was built as a local-network alternative to TeamViewer/AnyDesk/Chrome Remote Desktop.
-
-**Why CYPHER?**
-- No internet required (security + speed)
-- No subscriptions or data tracking
-- Works everywhere (hotspot, USB tether, LAN)
-- Full control with guest sandboxing
-- Modern, fast, beautiful UI
-
----
-
-## 🆘 Support
-
-### **Getting Help**
-1. Check [Troubleshooting](#-troubleshooting) section
-2. Review [SYSTEM_AUDIT.md](./SYSTEM_AUDIT.md) for connectivity
-3. Review [FEATURE_VERIFICATION.md](./FEATURE_VERIFICATION.md) for feature status
-4. Check [Architecture.md](./Architecture.md) for implementation details
-
-### **Reporting Bugs**
-Include:
-- Device info (PC OS, phone Android version)
-- Connection type (WiFi/USB tether)
-- Steps to reproduce
-- Error message/logs
-
----
-
-## 📚 Additional Documentation
-
-- **[SYSTEM_AUDIT.md](./SYSTEM_AUDIT.md)** — Network connectivity audit, all connection modes tested
-- **[FEATURE_VERIFICATION.md](./FEATURE_VERIFICATION.md)** — Complete feature checklist with status
-- **[Architecture.md](./Architecture.md)** — System design, components, data flow
-- **[Pairing Specification.md](./Pairing Specification.md)** — Pairing protocol details
-- **[File transfer protocol.md](./File transfer protocol.md)** — File transfer implementation
-- **[UI Design System.md](./UI Design System.md)** — Design tokens & component library
-
----
-
-**Made with ❤️ for local network enthusiasts.**
-
-*Last updated: 2026-06-17*
+CYPHER stands on Flask, Socket.IO, psutil, Pillow, mss, OpenCV, zeroconf, Flutter
+and a long tail of open-source work — all credited in [`NOTICE`](NOTICE).

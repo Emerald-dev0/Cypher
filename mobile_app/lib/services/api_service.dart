@@ -15,10 +15,142 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Thrown when a call would send credentials or cleartext traffic to a
+/// destination outside the local network.
+///
+/// Subclasses [ApiException] so it is handled by the existing error paths: every
+/// caller already has to cope with [ApiException] because [_handleResponse]
+/// throws it for any non-2xx status.
+class PrivateNetworkRequiredException extends ApiException {
+  final String host;
+  PrivateNetworkRequiredException(this.host)
+      : super(
+          'Refusing to contact "$host" over cleartext HTTP. CYPHER only talks to '
+          'a node on your local network. Public and internet destinations '
+          'require TLS (roadmap P2-S1).',
+        );
+}
+
 class ApiService {
   ApiService._();
 
-  static String _baseUrl(String ip) => 'http://$ip:5000';
+  // ── Private-network enforcement ───────────────────────────────
+  //
+  // WHY THIS EXISTS
+  // ───────────────
+  // android/app/src/main/res/xml/network_security_config.xml sets
+  // cleartextTrafficPermitted="true" globally, because Android's network
+  // security config matches on *hostnames only* — it has no CIDR or IP-range
+  // syntax, so the exception cannot be scoped to RFC1918 declaratively.
+  //
+  // Permitting cleartext globally with no compensation would mean a paired token
+  // (sent as X-Auth-Token) could travel in plaintext to any host on the internet
+  // if the stored address were ever replaced — by a bug, a malicious QR code, a
+  // compromised mDNS response, or a user pasting a public IP. That file's
+  // comment names this function as the compensating control; before this commit
+  // the function did not exist, so the control was missing entirely.
+  //
+  // This is defence in depth, not the primary control. TLS (P2-S1) is the real
+  // fix and will let cleartextTrafficPermitted flip to false.
+
+  /// Whether [host] is a destination this app may contact over cleartext HTTP.
+  ///
+  /// Permitted: IPv4 loopback/link-local/RFC1918, IPv6 loopback/link-local/ULA
+  /// (fc00::/7), `localhost`, and mDNS `.local` names — which are
+  /// link-local-scoped by definition and are how DiscoveryService finds nodes.
+  ///
+  /// Everything else is refused. Note what is deliberately NOT permitted:
+  /// CGNAT (100.64.0.0/10) is carrier infrastructure rather than a LAN, and a
+  /// public hostname is exactly the case this guard exists to stop.
+  static bool isPermittedTarget(String host) {
+    final normalized = host.trim().toLowerCase().replaceAll(RegExp(r'^\[|\]$'), '');
+    if (normalized.isEmpty) return false;
+
+    if (normalized == 'localhost') return true;
+    // mDNS names resolve only within the local link.
+    if (normalized.endsWith('.local')) return true;
+
+    final addr = InternetAddress.tryParse(normalized);
+    if (addr == null) {
+      // Not an IP literal and not an mDNS name. A routable hostname would need
+      // DNS resolution to classify, and resolving it here would leak the query;
+      // refuse instead and let TLS handle remote nodes.
+      return false;
+    }
+
+    final bytes = addr.rawAddress;
+
+    // Every classification below is done on the raw bytes on purpose.
+    //
+    // This originally delegated to `addr.isLoopback || addr.isLinkLocal`, and
+    // that was wrong: `febf::1` was refused even though fe80::/10 spans fe80::
+    // through febf:: — the second byte may be anything from 0x80 to 0xBF once the
+    // first ten bits are fixed. The SDK helpers are not a specification, and this
+    // function decides whether an auth token may be sent in cleartext, so
+    // "checkable against RFC 4291 / RFC 1918 by reading the code" beats "trust the
+    // helper". It is also the only way to test this without a device.
+    if (addr.type == InternetAddressType.IPv4 && bytes.length == 4) {
+      if (bytes[0] == 127) return true; // 127.0.0.0/8 loopback
+      if (bytes[0] == 169 && bytes[1] == 254) {
+        return true; // 169.254.0.0/16 link-local
+      }
+      if (bytes[0] == 10) return true; // 10.0.0.0/8
+      if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) {
+        return true; // 172.16.0.0/12
+      }
+      if (bytes[0] == 192 && bytes[1] == 168) return true; // 192.168.0.0/16
+      return false;
+    }
+
+    if (addr.type == InternetAddressType.IPv6 && bytes.length == 16) {
+      // ::1 — the first fifteen bytes are zero and the last is one.
+      var loopback = true;
+      for (var i = 0; i < 15; i++) {
+        if (bytes[i] != 0) {
+          loopback = false;
+          break;
+        }
+      }
+      if (loopback && bytes[15] == 1) return true;
+
+      // fe80::/10 link-local. Ten fixed bits means the second byte ranges over
+      // 0x80..0xBF, not just 0x80 — this is the case the SDK helper got wrong.
+      if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) return true;
+
+      // fc00::/7 — unique local addresses, the IPv6 analogue of RFC1918.
+      if (bytes[0] == 0xfc || bytes[0] == 0xfd) return true;
+
+      return false;
+    }
+
+    return false;
+  }
+
+  /// Throws [PrivateNetworkRequiredException] unless [host] is on the local
+  /// network. Called by [_baseUrl], which every request in this class goes
+  /// through, so there is exactly one place to get this right.
+  static void assertPrivateTarget(String host) {
+    if (!isPermittedTarget(host)) {
+      throw PrivateNetworkRequiredException(host);
+    }
+  }
+
+  /// The policy actually intended by network_security_config.xml, expressed for a
+  /// parsed [Uri]: **cleartext HTTP only to a private host; TLS to anywhere.**
+  ///
+  /// Use this wherever a URL is built or consumed outside [_baseUrl] — guest
+  /// share links, preview/thumbnail URLs handed to [Image.network], and any
+  /// future WebView target. An `https:` URI is permitted regardless of host,
+  /// which is why the GitHub release check in `update_service.dart` is unaffected.
+  static void assertPrivateUri(Uri uri) {
+    if (uri.scheme != 'http') return;
+    assertPrivateTarget(uri.host);
+  }
+
+  static String _baseUrl(String ip) {
+    assertPrivateTarget(ip);
+    return 'http://$ip:5000';
+  }
 
   static Future<Map<String, String>> _headers({bool withToken = true}) async {
     final headers = <String, String>{'Content-Type': 'application/json'};
@@ -275,8 +407,29 @@ class ApiService {
     final uri = Uri.parse('${_baseUrl(ip)}/files/upload');
     final request = http.MultipartRequest('POST', uri)
       ..headers['X-Auth-Token'] = token ?? ''
-      ..fields['destination'] = destination
-      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+      ..fields['destination'] = destination;
+
+    // `fileSize` and `fileName` were computed above and never used, and
+    // `onProgress` was accepted and never invoked — while `downloadFile` did
+    // invoke its own callback. Two callers (`file_provider`, `drop_zone_screen`)
+    // therefore wired up progress UI that could never move. Streaming the file
+    // through a counting `ByteStream` fixes all three at once and is what those
+    // two locals were always for.
+    //
+    // `sent` counts bytes handed to the HTTP layer, not bytes acknowledged on the
+    // wire, so this runs slightly ahead of the network. Good enough for a
+    // progress bar, and better than one that stays at zero.
+    var sent = 0;
+    request.files.add(http.MultipartFile(
+      'file',
+      http.ByteStream(file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(sent, fileSize);
+        return chunk;
+      })),
+      fileSize,
+      filename: fileName,
+    ));
 
     final streamedRes = await request.send().timeout(const Duration(minutes: 60));
     final res = await http.Response.fromStream(streamedRes);
@@ -623,11 +776,29 @@ class ApiService {
     void Function(int sent, int total)? onProgress,
   }) async {
     final token = await StorageService.getToken();
+    final file = File(filePath);
+    final fileSize = await file.length();
+    final fileName = p.basename(filePath);
+
     final uri = Uri.parse('${_baseUrl(ip)}/files/upload');
     final request = http.MultipartRequest('POST', uri)
       ..headers['X-Auth-Token'] = token ?? ''
-      ..fields['destination'] = 'CypherDrop'
-      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+      ..fields['destination'] = 'CypherDrop';
+
+    // Same defect as `uploadFile`: `onProgress` was declared and never called, so
+    // `drop_zone_screen`'s progress callback was dead. See the note there.
+    var sent = 0;
+    request.files.add(http.MultipartFile(
+      'file',
+      http.ByteStream(file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(sent, fileSize);
+        return chunk;
+      })),
+      fileSize,
+      filename: fileName,
+    ));
+
     final streamedRes = await request.send().timeout(const Duration(minutes: 10));
     final res = await http.Response.fromStream(streamedRes);
     return _handleResponse(res);

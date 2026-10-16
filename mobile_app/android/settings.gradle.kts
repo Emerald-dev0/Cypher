@@ -20,15 +20,11 @@ pluginManagement {
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
 
-    // ✅ Emerald Compatibility Bridge: Use 8.7.2 (Stable) to satisfy Camera dependencies
-    // while avoiding the Windows-specific hang of 8.9.1
+    // Pinned to 8.7.2: 8.9.1 hangs the Gradle daemon on Windows. See the
+    // resolutionStrategy pins in app/build.gradle.kts. Upgrading AGP is tracked
+    // in docs/plans/rebuild-mobile-ui.md · P2-M9.
     id("com.android.application") version "8.7.2" apply false
-
-    // ✅ Updated Kotlin
     id("org.jetbrains.kotlin.android") version "2.1.0" apply false
-    
-    // ✅ Add Google Services Plugin for Firebase
-    id("com.google.gms.google-services") version "4.4.2" apply false
 }
 
 include(":app")

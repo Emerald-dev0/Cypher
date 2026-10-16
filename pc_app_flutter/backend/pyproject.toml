@@ -1,0 +1,116 @@
+[project]
+name = "cypher-node"
+description = "CYPHER node — the headless Python backend that a phone or desktop shell controls a PC through."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "../../LICENSE" }
+authors = [{ name = "Emerald Dev and CYPHER contributors" }]
+dynamic = ["version"]
+
+# Runtime dependencies live in requirements.txt so that the PyInstaller spec, the
+# installer and CI all resolve the same pinned set. Do not duplicate them here.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 110
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+# Start narrow and widen deliberately. The node has ~40 bare `except:` clauses and
+# no type hints; turning on every rule at once would produce thousands of findings
+# and hide the ones that matter.
+#
+#   F     pyflakes — undefined names (F821) are a CI *gate*. It is the rule that
+#         catches the class of bug that broke the entire guest feature.
+#   E9    the syntax/runtime error subset
+#   W605  invalid escape sequence
+#   B     bugbear — mutable defaults, bare except, late-binding closures
+#   S     bandit — security. Report only; promoting to an error follows P1-B4.
+#   C4    comprehensions
+#   UP    pyupgrade — modernises 3.11-incompatible idioms
+select = ["F", "E9", "W605", "B", "S", "C4", "UP"]
+
+# S101 (assert) is idiomatic in tests; S104 (0.0.0.0 bind) is the product —
+# the node listens on the LAN by design. Both are handled elsewhere: asserts by
+# pytest, and binding by P2-S4 (least privilege / interface selection).
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B011"]
+# server.py is a 3,000-line legacy module awaiting the Blueprint decomposition
+# (P1-B4). Bugbear findings there are noise until it is split.
+"core/server.py" = ["B", "S"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+docstring-code-format = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+# An xfail that starts passing is a signal, not a success. Every marker in this
+# suite also passes strict=True explicitly; this is the default so that a new
+# xfail added without it still fails the build on XPASS instead of quietly
+# turning green and hiding a fixed bug.
+xfail_strict = true
+markers = [
+    "security: tests that assert a security control (must pass before any release)",
+    "windows: requires a Windows host (skipped in Linux CI)",
+    "integration: requires a live node and a paired client (manual, see docs/plans/test-matrix.md)",
+]
+filterwarnings = [
+    "error::DeprecationWarning:core.*",
+]
+
+[tool.mypy]
+# Gradual adoption (P1-B3/P1-B6): strict on the security-critical modules first,
+# untyped elsewhere. Widening this is a deliberate act, not a default.
+python_version = "3.11"
+# Enforced in CI (see .github/workflows/ci.yml). Adding a module to `files` is a
+# one-way door: once it type-checks, removing it needs justification.
+#
+files = ["core/guest_manager.py", "core/utils.py", "core/sandbox.py", "core/auth.py", "core/hostguard.py", "core/version.py"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = false
+follow_imports = "silent"
+
+[tool.coverage.run]
+source = ["core"]
+omit = ["core/recording_overlay.py", "tests/*"]
+
+[tool.coverage.report]
+# COVERAGE RATCHET
+# ────────────────
+# The Phase 1 target (P1-T1) is 70%. The suite currently measures 35.73%, so a
+# `fail_under = 70` gate would be red on every single run from day one — and a
+# permanently red gate teaches contributors to ignore CI entirely, which is worse
+# than having no gate at all.
+#
+# So this is a ratchet, not an aspiration:
+#   · The floor is set just below today's real measurement.
+#   · Any PR that adds tests MUST raise this number to the new measurement.
+#   · No PR may ever lower it. Lowering it requires a maintainer-approved issue
+#     explaining what coverage was lost and why.
+#   · P1-T1 raises it to 70 and that becomes the permanent floor.
+#
+# Current measurement: 36.35% over core/ after P1-S2. Ratchet, never lower.
+fail_under = 46
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if WINDOWS:",
+    "raise NotImplementedError",
+]

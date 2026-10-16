@@ -1,0 +1,129 @@
+name: Bug report
+description: Something in CYPHER is broken or behaves unexpectedly.
+title: "[bug] "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing. CYPHER is a remote-control tool, so **reproducibility and
+        environment detail matter more than usual** — a bug that only happens on one
+        Windows build or one Android version is still a real bug.
+
+        🔒 **If you found a security vulnerability, do NOT open a public issue.**
+        Follow [SECURITY.md](../../SECURITY.md) for private disclosure.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am running a [published release](https://github.com/Emerald-dev0/Cypher/releases), or a build from `main` at a commit I list below.
+          required: true
+        - label: This is not a security vulnerability (otherwise use SECURITY.md).
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One or two sentences on the observed behaviour.
+      placeholder: Tapping "Send to PC" uploads 0 bytes and the progress bar never moves.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Numbered, starting from a paired and connected state.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component?
+      description: If you are unsure, pick the one you were looking at.
+      options:
+        - Node backend (Python)
+        - Desktop shell (Flutter)
+        - Mobile app (Flutter)
+        - Android platform layer
+        - Pairing / discovery
+        - File transfer
+        - Screen streaming / recording
+        - Relay (cloud)
+        - CI / release packaging
+        - Documentation / website
+    validations:
+      required: true
+
+  - type: input
+    id: node-os
+    attributes:
+      label: PC (node) OS
+      placeholder: "Windows 11 24H2 build 26100 / Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: phone-os
+    attributes:
+      label: Phone OS and model
+      placeholder: "Android 15, Pixel 8"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: How were the devices connected?
+      options:
+        - Same WiFi / LAN router
+        - Android hotspot (phone is AP)
+        - Windows Mobile Hotspot (PC is AP)
+        - USB tethering
+        - Wired LAN / Ethernet
+        - Relay (off-LAN)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: CYPHER version
+      description: Desktop → Settings → About, or the release tag you installed.
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Node log: `%APPDATA%\Cypher\logs\node.log` (Windows) or `~/.config/cypher/logs/node.log` (Linux).
+        Android log: `adb logcat -s flutter:CYPHER:V`.
+        Wrap in triple backticks. **Redact IPs, tokens and file names first.**
+      render: text
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or screen recording
+      description: Drag files in. Blur anything identifying.

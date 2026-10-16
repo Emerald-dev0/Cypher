@@ -6,7 +6,6 @@ import '../providers/connection_provider.dart';
 import '../providers/file_provider.dart';
 import '../services/api_service.dart';
 import '../theme/colors.dart';
-import '../theme/app_theme.dart';
 import '../widgets/cypher_button.dart';
 import '../widgets/cypher_card.dart';
 
@@ -33,7 +32,6 @@ class _ScreenRecorderScreenState extends State<ScreenRecorderScreen>
   bool _isPaused    = false;
   int  _duration    = 0;
   String? _savedFilename;
-  String? _savedPath;
   Timer? _timer;
 
   // Settings (locked when recording)
@@ -119,7 +117,7 @@ class _ScreenRecorderScreenState extends State<ScreenRecorderScreen>
         fps:     _fps,
         audio:   _audio,
       );
-      setState(() { _isRecording = true; _isPaused = false; _savedFilename = null; _savedPath = null; _duration = 0; });
+      setState(() { _isRecording = true; _isPaused = false; _savedFilename = null; _duration = 0; });
       _startTimer();
     } catch (e) {
       _toast('Failed to start: ${e.toString().replaceAll('Exception: ', '')}', err: true);
@@ -146,7 +144,6 @@ class _ScreenRecorderScreenState extends State<ScreenRecorderScreen>
         _isPaused      = false;
         _duration      = 0;
         _savedFilename = name;
-        _savedPath     = path;
       });
       if (_downloadAfterStop && name != null && path != null) {
         _downloadToPhone(path, name);

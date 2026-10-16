@@ -4,8 +4,6 @@ import 'package:provider/provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/system_provider.dart';
 import '../theme/colors.dart';
-import '../theme/app_theme.dart';
-import '../widgets/cypher_card.dart';
 import '../widgets/shimmer_box.dart';
 
 class AppLauncherScreen extends StatefulWidget {

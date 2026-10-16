@@ -1,20 +1,69 @@
-flask==3.0.0
-flask-cors==4.0.0
+# ─────────────────────────────────────────────────────────────
+# CYPHER node (PC backend) — Python dependencies
+#
+# Python 3.11+ required. 3.12 is the version the packaged builds are tested on.
+#
+# Platform markers matter here: pyautogui/pycaw/pywin32 do not install or run on
+# Linux, and a plain `pip install -r requirements.txt` on Ubuntu used to fail
+# outright. Windows-only packages are now gated on sys_platform == 'win32'.
+#
+# Install:   pip install -r requirements.txt
+# Dev extra: pip install -r requirements-dev.txt
+# ─────────────────────────────────────────────────────────────
+
+# ── Web / transport ──────────────────────────────────────────
+flask==3.0.3
+flask-cors==4.0.2
 flask-socketio==5.3.6
-python-socketio==5.10.0
-python-engineio==4.8.0
-eventlet==0.41.0
-psutil==5.9.5
-pillow==10.0.0
-pyautogui==0.9.53
-pycaw==20251023
-comtypes==1.2.0
-pyperclip==1.8.2
-pygetwindow==0.0.9
-customtkinter==5.2.0
-zeroconf==0.131.0
-requests==2.31.0
-qrcode==7.4.2
-gunicorn==21.2.0
-python-dotenv==1.0.0
-screeninfo==0.8.1
+python-socketio==5.11.4
+python-engineio==4.9.1
+
+# ── System introspection (cross-platform) ────────────────────
+psutil==6.1.0
+
+# ── Imaging & capture ────────────────────────────────────────
+# Pillow is imported at module load by core/server.py (clipboard, thumbnails,
+# window icons). It used to be referenced without being declared here.
+pillow==11.0.0
+# mss + opencv + numpy back the MJPEG screen stream and the screen recorder.
+# All three were imported lazily by _load_media_engine() but never declared, so
+# streaming/recording crashed with ModuleNotFoundError on a clean install.
+mss==10.0.0
+numpy==2.1.3
+opencv-python==4.10.0.84
+
+# ── LAN discovery ────────────────────────────────────────────
+zeroconf==0.137.2
+
+# ── Tray icon ────────────────────────────────────────────────
+# core/tray.py imports pystray; it was only listed in the (now deleted) root
+# requirements.txt, so a clean backend install crashed on startup.
+pystray==0.19.5
+
+# ── Misc ─────────────────────────────────────────────────────
+requests==2.32.3
+qrcode==8.0
+
+# ── Desktop automation: Windows only ─────────────────────────
+# These provide keystroke injection, window enumeration and audio control.
+# On Linux the equivalent capability is not yet implemented — see
+# ../../ROADMAP.md · Phase 3 (Linux node support).
+pyautogui==0.9.54 ; sys_platform == 'win32'
+pyperclip==1.9.0 ; sys_platform == 'win32'
+pygetwindow==0.0.9 ; sys_platform == 'win32'
+pywin32==308 ; sys_platform == 'win32'
+pycaw==20240210 ; sys_platform == 'win32'
+comtypes==1.4.8 ; sys_platform == 'win32'
+screeninfo==0.8.1 ; sys_platform == 'win32'
+
+# ── Recording overlay ────────────────────────────────────────
+# Optional. core/recording_overlay.py degrades to a no-op when this is absent,
+# so headless Linux nodes do not need a Tk stack.
+customtkinter==5.2.2 ; sys_platform == 'win32'
+
+# ─────────────────────────────────────────────────────────────
+# REMOVED (were listed but never imported anywhere in the codebase):
+#   eventlet          — the node runs SocketIO in 'threading' mode
+#   gunicorn          — never used; the node is not deployed as a WSGI app
+#   python-dotenv     — no .env loading exists
+# ─────────────────────────────────────────────────────────────

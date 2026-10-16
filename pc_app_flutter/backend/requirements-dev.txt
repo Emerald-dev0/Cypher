@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────
+# CYPHER node — development & CI dependencies
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# These are never bundled into the packaged node binary.
+# ─────────────────────────────────────────────────────────────
+
+-r requirements.txt
+
+# ── Lint / format ────────────────────────────────────────────
+ruff==0.8.2
+
+# ── Type checking (gradual adoption — see ../../ROADMAP.md P1-B6) ──
+mypy==1.13.0
+# core/utils.py imports `requests`, which ships no py.typed marker. mypy reports
+# that as `import-untyped`, and `ignore_missing_imports = true` does NOT suppress
+# it — that setting only covers modules mypy cannot find at all, not modules that
+# are installed without stubs. Without this pin the mypy CI step fails on a clean
+# install while passing in a venv where requests happens to be absent.
+# Version tracks requests==2.32.x from requirements.txt.
+types-requests==2.32.0.20250602
+
+# ── Tests ────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-cov==6.0.0
+
+# ── Packaging ────────────────────────────────────────────────
+pyinstaller==6.11.1
