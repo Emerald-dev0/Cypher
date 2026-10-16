@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../services/bridge_service.dart';
 import '../services/theme_service.dart';
 import '../services/update_service.dart';
@@ -263,12 +264,16 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                                 pairingCode: _pairingCode,
                                 devices: _devices,
                                 stats: _stats,
+                                transfers: _activeTransfers,
+                                activityLog: _activityLog,
                                 isDark: isDark,
                                 accent: accent,
                                 onRefreshCode: _refreshCode,
                                 waveAnimation: _waveController,
                                 onOptimize: _optimizeSystem,
                                 isOptimizing: _isOptimizing,
+                                onOpenTransfers: () => setState(() => _activeTab = 'Transfers'),
+                                onOpenSecurity: () => setState(() => _activeTab = 'Security'),
                               ),
                               FilesTab(
                                 isDark: isDark,
@@ -411,23 +416,30 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               children: [
                 Text('PAIRING', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: isDark ? Colors.white24 : Colors.black26, letterSpacing: 1.8)),
                 const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: _refreshCode,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: accent.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: accent.withOpacity(0.25)),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(_pairingCode, style: GoogleFonts.jetBrainsMono(fontSize: 20, fontWeight: FontWeight.w700, color: accent, letterSpacing: 4)),
-                        const SizedBox(height: 4),
-                        Text('tap to rotate', style: GoogleFonts.inter(fontSize: 10, color: isDark ? Colors.white38 : Colors.black45)),
-                      ],
-                    ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: accent.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    children: [
+                      if (_pairingCode.length == 6 && _pairingCode != '------')
+                        QrImageView(
+                          data: 'cypher://pair?ip=$_pcIp&code=$_pairingCode',
+                          size: 108,
+                          backgroundColor: Colors.white,
+                        ),
+                      const SizedBox(height: 8),
+                      Text(_pairingCode, style: GoogleFonts.jetBrainsMono(fontSize: 18, fontWeight: FontWeight.w700, color: accent, letterSpacing: 3)),
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: _refreshCode,
+                        child: Text('Regenerate', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: isDark ? Colors.white54 : Colors.black54)),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -507,37 +519,42 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       child: Container(
         height: 52,
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F0F11) : const Color(0xFFF2F2F7),
+          color: !_isSystemActive
+              ? const Color(0xFF3F1D1D)
+              : (isDark ? const Color(0xFF0F0F11) : const Color(0xFFF2F2F7)),
           border: Border(bottom: BorderSide(color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.06))),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Row(
           children: [
-            // Breadcrumb
-            Text('CYPHER', style: GoogleFonts.inter(fontSize: 11, color: isDark ? Colors.white24 : Colors.black26, fontWeight: FontWeight.w500)),
+            Container(
+              width: 8, height: 8,
+              decoration: BoxDecoration(
+                color: _isSystemActive ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                shape: BoxShape.circle,
+              ),
+            ),
             const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, size: 13, color: isDark ? Colors.white12 : Colors.black12),
+            Text(
+              _isSystemActive ? 'Node ready' : 'Node down',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: _isSystemActive ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              (_settings['device_name'] ?? 'This PC').toString(),
+              style: GoogleFonts.inter(fontSize: 11, color: isDark ? Colors.white54 : Colors.black54),
+            ),
             const SizedBox(width: 8),
+            Text('·', style: GoogleFonts.inter(color: isDark ? Colors.white24 : Colors.black26)),
+            const SizedBox(width: 8),
+            Text('$_pcIp:5000', style: GoogleFonts.inter(fontSize: 11, color: isDark ? Colors.white38 : Colors.black45)),
+            const SizedBox(width: 16),
             Text(_activeTab, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: accent)),
             const Spacer(),
-            // IP address badge
-            if (_pcIp != '127.0.0.1')
-              Container(
-                margin: const EdgeInsets.only(right: 16),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.06)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.wifi_rounded, size: 11, color: isDark ? Colors.white30 : Colors.black38),
-                    const SizedBox(width: 5),
-                    Text(_pcIp, style: GoogleFonts.inter(fontSize: 11, color: isDark ? Colors.white38 : Colors.black45)),
-                  ],
-                ),
-              ),
             // Window controls
             _windowBtn(Icons.remove_rounded, () => windowManager.minimize(), isDark),
             _windowBtn(Icons.check_box_outline_blank_rounded, () async {

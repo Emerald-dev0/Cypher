@@ -225,6 +225,12 @@ source at all — default copyright, all rights reserved.
   removed; `EmptyWorkingSet` succeeds on processes the node's user owns, and the
   response now reports how many were inaccessible rather than implying success.
 
+### Changed
+
+- **Desktop Overview is a real control tower.** Three columns (vitals, right
+  now, recent). Title bar shows node up/down, machine name, and `ip:5000`
+  (turns red when the node is down). Sidebar pairing is QR + code + regenerate.
+
 ### Security
 
 - **Root `VERSION` file** (P1-B8 partial) and `log_event(..., sensitive=)` (P1-S5).
