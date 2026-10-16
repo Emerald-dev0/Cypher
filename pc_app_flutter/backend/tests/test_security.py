@@ -28,7 +28,7 @@ pytestmark = pytest.mark.security
 # set so that adding a route to `public_endpoints` — the change that turns an
 # authenticated endpoint into an unauthenticated one — fails a test rather than
 # shipping silently. See audit S-04 and roadmap P1-S3.
-EXPECTED_PUBLIC_ENDPOINTS = {"ping", "get_status", "pair_device"}
+EXPECTED_PUBLIC_ENDPOINTS = {"ping", "system.get_status", "pairing.pair_device"}
 
 
 class TestAuthenticationByDefault:
@@ -115,7 +115,7 @@ class TestAuthenticationByDefault:
         from core.auth import is_public_view
 
         assert is_public_view(server.app.view_functions["ping"]) is True
-        assert is_public_view(server.app.view_functions["get_paired_devices"]) is False
+        assert is_public_view(server.app.view_functions["pairing.get_paired_devices"]) is False
 
     def test_media_token_route_names_all_exist(self, server):
         """Same failure mode, different list: a renamed streaming handler would
@@ -467,9 +467,9 @@ class TestConstantTimeComparison:
         comparison reliably in CI is not practical."""
         from pathlib import Path
 
-        source = (Path(__file__).resolve().parents[1] / "core" / "server.py").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            Path(__file__).resolve().parents[1] / "core" / "routes" / "pairing.py"
+        ).read_text(encoding="utf-8")
         assert "hmac.compare_digest" in source, (
             "pairing no longer uses a constant-time comparison"
         )

@@ -9,13 +9,13 @@ import '../services/theme_service.dart';
 import '../services/update_service.dart';
 
 // Tab Modules
-import 'tabs/home_tab.dart';
-import 'tabs/health_tab.dart';
 import 'tabs/transfers_tab.dart';
 import 'tabs/files_tab.dart';
 import 'tabs/security_tab.dart';
 import 'tabs/activity_tab.dart';
 import 'tabs/settings_tab.dart';
+import 'tabs/devices_tab.dart';
+import 'tabs/overview_tab.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -25,7 +25,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> with TickerProviderStateMixin {
-  String _activeTab = "Home";
+  String _activeTab = "Overview";
   final BridgeService _bridge = BridgeService();
   Timer? _syncTimer;
   late AnimationController _waveController;
@@ -259,9 +259,17 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                             key: const ValueKey("active_stack"),
                             index: _getTabIndex(_activeTab),
                             children: [
-                              HomeTab(pairingCode: _pairingCode, devices: _devices, stats: _stats, isDark: isDark, accent: accent, onRefreshCode: _refreshCode),
-                              TransfersTab(activeTransfers: _activeTransfers, activityLog: _activityLog, isDark: isDark, accent: accent),
-                              HealthTab(stats: _stats, isDark: isDark, waveAnimation: _waveController, accent: accent, onOptimize: _optimizeSystem, isOptimizing: _isOptimizing),
+                              OverviewTab(
+                                pairingCode: _pairingCode,
+                                devices: _devices,
+                                stats: _stats,
+                                isDark: isDark,
+                                accent: accent,
+                                onRefreshCode: _refreshCode,
+                                waveAnimation: _waveController,
+                                onOptimize: _optimizeSystem,
+                                isOptimizing: _isOptimizing,
+                              ),
                               FilesTab(
                                 isDark: isDark,
                                 accent: accent,
@@ -269,8 +277,14 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                                 onAddFolder: _addSharedFolder,
                                 onRemoveFolder: _removeSharedFolder,
                               ),
-                              SecurityTab(isDark: isDark, accent: accent, sessions: _securitySessions, pcIp: _pcIp, onRevokeSession: _revokeGuestSession),
-                              ActivityTab(isDark: isDark, accent: accent, logs: _activityLog),
+                              TransfersTab(activeTransfers: _activeTransfers, activityLog: _activityLog, isDark: isDark, accent: accent),
+                              DevicesTab(devices: _devices, isDark: isDark, accent: accent),
+                              Column(
+                                children: [
+                                  Expanded(flex: 3, child: SecurityTab(isDark: isDark, accent: accent, sessions: _securitySessions, pcIp: _pcIp, onRevokeSession: _revokeGuestSession)),
+                                  Expanded(flex: 2, child: ActivityTab(isDark: isDark, accent: accent, logs: _activityLog)),
+                                ],
+                              ),
                               SettingsTab(
                                   settings: _settings,
                                   isDark: isDark,
@@ -292,13 +306,12 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
   int _getTabIndex(String tab) {
     switch (tab) {
-      case "Home": return 0;
-      case "Transfers": return 1;
-      case "System Health": return 2;
-      case "Shared Files": return 3;
+      case "Overview": return 0;
+      case "Files": return 1;
+      case "Transfers": return 2;
+      case "Devices": return 3;
       case "Security": return 4;
-      case "Activity Log": return 5;
-      case "Settings": return 6;
+      case "Settings": return 5;
       default: return 0;
     }
   }
@@ -380,20 +393,46 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
           // Nav groups
           _sectionLabel('MAIN', isDark),
-          _navItem('Home', Icons.home_rounded, accent, isDark),
+          _navItem('Overview', Icons.dashboard_rounded, accent, isDark),
+          _navItem('Files', Icons.folder_shared_rounded, accent, isDark),
           _navItem('Transfers', Icons.sync_alt_rounded, accent, isDark),
 
           const SizedBox(height: 12),
-          _sectionLabel('SYSTEM', isDark),
-          _navItem('System Health', Icons.analytics_rounded, accent, isDark),
-          _navItem('Shared Files', Icons.folder_shared_rounded, accent, isDark),
-
-          const SizedBox(height: 12),
           _sectionLabel('ACCESS', isDark),
+          _navItem('Devices', Icons.devices_rounded, accent, isDark),
           _navItem('Security', Icons.shield_rounded, accent, isDark),
-          _navItem('Activity Log', Icons.list_alt_rounded, accent, isDark),
 
           const Spacer(),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('PAIRING', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: isDark ? Colors.white24 : Colors.black26, letterSpacing: 1.8)),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _refreshCode,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: accent.withOpacity(0.25)),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(_pairingCode, style: GoogleFonts.jetBrainsMono(fontSize: 20, fontWeight: FontWeight.w700, color: accent, letterSpacing: 4)),
+                        const SizedBox(height: 4),
+                        Text('tap to rotate', style: GoogleFonts.inter(fontSize: 10, color: isDark ? Colors.white38 : Colors.black45)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
           // Status pill
           Padding(

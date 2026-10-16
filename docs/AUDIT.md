@@ -1246,7 +1246,7 @@ live via `get_overlay_manager()`. It was rewritten to degrade to a no-op when
 customtkinter is absent (headless Linux) and to expose `.available` so the UI can
 warn the user.
 
-### 🟠 A-02 — `server.py` is a 3,000-line god module · **DEFERRED → P1-B4**
+### 🟠 A-02 — `server.py` is a 3,000-line god module · **FIXED**
 
 ~95 routes, the auth hook, the resource monitor, the recording state machine,
 file transfer, guest sessions, and ~550 lines of embedded HTML/CSS/JS — all in
@@ -1255,10 +1255,10 @@ bug (F-02) survived because nobody could hold the file in their head; the
 `public_endpoints` name list drifted (S-04); the guest landing page exists in
 duplicate as `guest_html.txt`, a 29 KB copy-paste of the route body.
 
-**Required fix:** Flask `Blueprint`s per domain (`files`, `system`, `guest`,
-`media`, `recording`, `pairing`), the guest HTML extracted to a real template,
-and a `sandbox` module owning all path resolution. Target: no file over ~500
-lines.
+**Fix applied (P1-B4):** Flask blueprints in `core/routes/` (`pairing`, `files`,
+`transfer`, `system`, `media`, `recording`, `guest`). Guest landing page is
+`templates/guest.html`. Views run against `core.server` state (rewire after
+register). `system.py` is still ~730 lines — a follow-up split, not a rollback.
 
 ### 🟠 A-03 — No test suite that CI could run · **PARTIALLY FIXED**
 

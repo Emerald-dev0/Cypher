@@ -93,11 +93,11 @@ Full list in [`../AGENTS.md`](../AGENTS.md) §6. The node-specific ones:
 - **Never import a Windows-only module at top level.** Route it through
   `_load_automation()` / `_load_media_engine()` / `_load_audio_engine()` and check
   for `None`. The node must degrade, not crash (AGENTS.md §4 I6).
-- **`server.py` is too big.** New route groups go in a new `core/` module as a
-  Flask Blueprint (P1-B4), not appended here.
+- **New routes go in `core/routes/` as a Flask Blueprint**, not appended to
+  `server.py`. Guest HTML is `templates/guest.html`.
 - **Every route is authenticated by default.** Unauthenticated views must carry
-  `@public_route` (under `@app.route`). `tests/test_security.py` fails if the
-  decorated set drifts from `{ping, get_status, pair_device}`.
+  `@public_route` (under `@bp.route`). `tests/test_security.py` fails if the
+  decorated set drifts from `{ping, system.get_status, pairing.pair_device}`.
 - **Filesystem access must go through `Sandbox.resolve`.** Every `/files/*`
   route and `/apps/launch` already does. Do not add a new file route without it;
   `test_every_filesystem_route_goes_through_the_sandbox` will fail the build.

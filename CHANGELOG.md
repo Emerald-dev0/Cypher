@@ -227,13 +227,21 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
+- **`server.py` split into Flask blueprints (P1-B4 / A-02).**
+  Routes live in `core/routes/{pairing,files,transfer,system,media,recording,guest}.py`.
+  Guest HTML is `templates/guest.html`. Tests still import `core.server`.
+- **Desktop shell information architecture (UI rebuild start).**
+  Sidebar is Overview / Files / Transfers / Devices / Security / Settings, with
+  a persistent pairing code. Startup shows locating → starting → waiting.
+- **Mobile follows the OS light/dark setting.** `AppTheme.light` is wired;
+  colour tokens are `const` so they can be used in const widgets.
 - **CORS is no longer `*` and Host is validated (P1-S4 / S-07).**
   `core/hostguard.py` allowlists loopback and this machine's addresses. SocketIO
   uses the same origin list. `Host: evil.example` is 400.
 - **Public routes are opted in with `@public_route` (P1-S3 / S-04).**
   `core/auth.py` marks views; `before_request` checks the mark, not a function-name
   list. Renaming a view cannot silently expose it. Tests fail if the decorated
-  set drifts from `{ping, get_status, pair_device}`.
+  set drifts from `{ping, system.get_status, pairing.pair_device}`.
 - **Desktop node discovery no longer depends on one developer's machine (P1-D2 / F-08).**
   `BackendManager` searches next to `Platform.resolvedExecutable`, then cwd,
   then PATH. The hardcoded `C:\\Users\\hp\\...\\python.exe` is gone. The startup

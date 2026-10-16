@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <title>CYPHER{{ 'Drop' if is_drop else ' — Shared Files' }}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+    :root {
+      --accent:      #7C3AED;
+      --accent-light:#A78BFA;
+      --accent-glow: rgba(124,58,237,0.25);
+      --bg:          #0F0F11;
+      --surface:     #18181B;
+      --surface2:    #1F1F23;
+      --surface3:    #27272B;
+      --text:        #F4F4F5;
+      --text2:       #A1A1AA;
+      --text3:       #71717A;
+      --border:      rgba(255,255,255,0.07);
+      --border2:     rgba(124,58,237,0.3);
+      --success:     #22C55E;
+      --error:       #EF4444;
+      --warning:     #F59E0B;
+      --radius-sm:   10px;
+      --radius:      16px;
+      --radius-lg:   22px;
+    }
+
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding: max(env(safe-area-inset-top),20px) 0 max(env(safe-area-inset-bottom),40px);
+    }
+
+    .wrap { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+
+    /* ── Top bar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+      backdrop-filter: blur(20px);
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .logo-mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), #4F46E5);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .logo-mark svg { width:18px; height:18px; fill:white; }
+    .logo-name { font-size:15px; font-weight:800; color:var(--text); letter-spacing:-0.5px; }
+    .logo-name span { color:var(--accent-light); }
+
+    .timer-badge {
+      font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+      padding: 7px 14px; border-radius: 20px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text2); transition: all 0.4s;
+    }
+    .timer-badge.warn  { color: var(--warning); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+    .timer-badge.crit  { color: var(--error);   border-color: rgba(239,68,68,0.3);  background: rgba(239,68,68,0.08);  }
+
+    /* ── Install banner ── */
+    .install-banner {
+      margin: 16px 0 0;
+      padding: 14px 16px;
+      background: linear-gradient(135deg, rgba(124,58,237,0.12), rgba(79,70,229,0.08));
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .install-icon {
+      width: 44px; height: 44px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), #4F46E5);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+    .install-icon svg { width:22px; height:22px; fill:white; }
+    .install-text { flex:1; min-width:0; }
+    .install-text strong { font-size:13px; font-weight:700; color:var(--text); display:block; }
+    .install-text span { font-size:11px; color:var(--text2); }
+    .install-btn {
+      padding: 8px 14px; border-radius: 8px; font-size:12px; font-weight:700;
+      background: var(--accent); color: white; border: none; cursor: pointer;
+      white-space: nowrap; flex-shrink: 0; transition: 0.2s;
+    }
+    .install-btn:active { opacity:0.8; transform:scale(0.96); }
+    #installBanner { display:none; }
+
+    /* ── Drop hero ── */
+    .drop-hero {
+      margin: 20px 0 0;
+      text-align: center;
+      padding: 28px 20px;
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+    }
+    .drop-hero h2 { font-size:20px; font-weight:800; color:var(--text); margin-bottom:6px; }
+    .drop-hero p  { font-size:13px; color:var(--text2); line-height:1.6; }
+
+    /* ── Section header ── */
+    .section-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin: 24px 0 10px;
+    }
+    .section-title {
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 1.5px; color: var(--text3); text-transform: uppercase;
+    }
+    .section-count {
+      font-size: 11px; font-weight: 600; color: var(--text3);
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed rgba(124,58,237,0.25);
+      border-radius: var(--radius-lg);
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s;
+      background: rgba(124,58,237,0.03);
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color:var(--accent); background:rgba(124,58,237,0.07); }
+    .upload-zone-icon {
+      width: 56px; height: 56px; margin: 0 auto 14px;
+      background: rgba(124,58,237,0.1);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .upload-zone-icon svg { width:26px; height:26px; stroke:var(--accent-light); fill:none; stroke-width:2; }
+    .upload-zone h3 { font-size:15px; font-weight:700; color:var(--text); margin-bottom:4px; }
+    .upload-zone p  { font-size:12px; color:var(--text2); }
+    .upload-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+
+    /* ── Upload progress ── */
+    #uploadProgress { display:none; margin-top:16px; }
+    .upload-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px;
+      background: var(--surface2); border-radius: var(--radius-sm);
+      margin-bottom: 8px;
+    }
+    .upload-item-icon {
+      width: 36px; height: 36px; flex-shrink:0;
+      background: rgba(124,58,237,0.1); border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .upload-item-icon svg { width:18px; height:18px; stroke:var(--accent-light); fill:none; stroke-width:2; }
+    .upload-item-info { flex:1; min-width:0; }
+    .upload-item-name { font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .upload-item-bar { height:3px; border-radius:2px; background:var(--surface3); margin-top:6px; overflow:hidden; }
+    .upload-item-fill { height:100%; background:var(--accent); border-radius:2px; transition:width 0.2s; }
+    .upload-item-pct { font-size:11px; color:var(--text3); flex-shrink:0; width:34px; text-align:right; }
+
+    /* ── Breadcrumb ── */
+    .breadcrumb {
+      display: flex; gap: 6px; margin-bottom: 12px;
+      overflow-x: auto; scrollbar-width: none; padding: 2px;
+    }
+    .breadcrumb::-webkit-scrollbar { display:none; }
+    .crumb {
+      padding: 7px 14px; border-radius: 20px; font-size:12px; font-weight:600;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--accent-light); cursor: pointer; white-space: nowrap; transition: 0.2s;
+    }
+    .crumb:last-child { color:var(--text3); cursor:default; background:transparent; border-color:transparent; }
+    .crumb:not(:last-child):hover { background:var(--surface3); border-color:var(--border2); }
+
+    /* ── File list ── */
+    .file-list { display:flex; flex-direction:column; gap:8px; }
+
+    .file-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 14px;
+      background: var(--surface); border-radius: var(--radius);
+      border: 1px solid var(--border);
+      transition: all 0.18s; cursor: default;
+    }
+    .file-item.is-folder { cursor:pointer; }
+    .file-item.is-folder:hover { background:var(--surface2); border-color:var(--border2); transform:translateX(2px); }
+    .file-item:not(.is-folder):hover { background:var(--surface2); }
+
+    .file-icon {
+      width: 40px; height: 40px; flex-shrink:0; border-radius: 11px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .file-icon svg { width:20px; height:20px; }
+
+    .file-info { flex:1; min-width:0; }
+    .file-name { font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .file-meta { font-size:11px; color:var(--text3); margin-top:2px; }
+
+    .btn-dl {
+      padding: 8px 14px; border-radius: 8px; font-size:12px; font-weight:700;
+      background: rgba(124,58,237,0.12); color:var(--accent-light);
+      border: 1px solid rgba(124,58,237,0.2);
+      cursor: pointer; white-space:nowrap; transition: 0.2s;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .btn-dl:hover { background:rgba(124,58,237,0.22); border-color:var(--accent); }
+    .btn-dl:active { transform:scale(0.95); opacity:0.8; }
+    .btn-dl svg { width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:2.5; }
+
+    .folder-chevron { width:16px; height:16px; stroke:var(--text3); fill:none; stroke-width:2; }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center; padding: 52px 20px;
+    }
+    .empty-icon {
+      width: 64px; height: 64px; margin: 0 auto 16px;
+      background: var(--surface2); border-radius: 18px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .empty-icon svg { width:30px; height:30px; stroke:var(--text3); fill:none; stroke-width:1.5; }
+    .empty h3 { font-size:15px; font-weight:700; color:var(--text); margin-bottom:6px; }
+    .empty p  { font-size:13px; color:var(--text2); }
+
+    /* ── Toast ── */
+    #toastBox {
+      position: fixed; bottom: max(env(safe-area-inset-bottom),24px); left:50%;
+      transform: translateX(-50%); z-index:999; display:flex;
+      flex-direction:column; align-items:center; gap:8px;
+    }
+    .toast {
+      padding: 11px 20px; border-radius: 12px;
+      font-size: 13px; font-weight: 600; color: #fff;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: slideUp 0.2s ease;
+      white-space: nowrap;
+    }
+    .toast.ok    { background: #16a34a; }
+    .toast.err   { background: var(--error); }
+    .toast.info  { background: var(--accent); }
+    @keyframes slideUp { from { transform:translateY(12px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+
+    /* ── Loading skeleton ── */
+    .skeleton {
+      height: 64px; border-radius: var(--radius);
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+
+    @media (max-width: 480px) {
+      .btn-dl span { display:none; }
+      .btn-dl { padding:8px; }
+      .install-banner { flex-wrap:nowrap; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2L4 6v6c0 5.5 3.8 10.7 8 12 4.2-1.3 8-6.5 8-12V6l-8-4z"/></svg>
+      </div>
+      <div class="logo-name">CYPHER<span>{{ 'Drop' if is_drop else '' }}</span></div>
+    </div>
+    <div class="timer-badge" id="timerEl">--:--</div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- Install banner -->
+    <div class="install-banner" id="installBanner">
+      <div class="install-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2L4 6v6c0 5.5 3.8 10.7 8 12 4.2-1.3 8-6.5 8-12V6l-8-4z"/></svg>
+      </div>
+      <div class="install-text">
+        <strong>Get CYPHER on your phone</strong>
+        <span>Control your PC from anywhere on your WiFi — free forever</span>
+      </div>
+      <button class="install-btn" onclick="showToast('Search \\'CYPHER Remote\\' on your app store', 'info')">Get App</button>
+    </div>
+
+    {{ '<div class="drop-hero"><h2>Files dropped for you</h2><p>Everything below was shared by the sender. Download to your device or send files back.</p></div>' if is_drop else '' }}
+
+    <!-- Upload section -->
+    <div class="section-head" style="margin-top:20px">
+      <span class="section-title">{{ 'Send to Them' if is_drop else 'Upload Files' }}</span>
+    </div>
+
+    <div class="upload-zone" id="dropZone">
+      <div class="upload-zone-icon">
+        <svg viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+      </div>
+      <h3>{{ 'Drop files to send back' if is_drop else 'Drop files here' }}</h3>
+      <p>Tap to browse or drag and drop · No size limit</p>
+      <input type="file" id="uploadInput" multiple>
+    </div>
+
+    <div id="uploadProgress"></div>
+
+    <!-- File list section -->
+    <div class="section-head">
+      <span class="section-title">{{ 'Shared Files' if is_drop else 'Files' }}</span>
+      <span class="section-count" id="fileCount"></span>
+    </div>
+
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div class="file-list" id="fileList">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton" style="opacity:.6"></div>
+    </div>
+
+  </div>
+
+  <div id="toastBox"></div>
+
+  <script>
+    const TOKEN = "{{ token }}";
+    const BASE = window.location.origin;
+    const IS_DROP = {{ 'true' if is_drop else 'false' }};
+    let path = "";
+
+    // ── Timer ──
+    async function updateTimer() {
+      try {
+        const r = await fetch(`${BASE}/guest/session?token=${TOKEN}`);
+        const d = await r.json();
+        if (!d.success) return;
+        const s = d.time_remaining_seconds || 0;
+        const m = Math.floor(s/60), sc = s%60;
+        const el = document.getElementById('timerEl');
+        el.textContent = `${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;
+        el.className = s < 60 ? 'timer-badge crit' : s < 300 ? 'timer-badge warn' : 'timer-badge';
+      } catch(_) {}
+    }
+
+    // ── Load files ──
+    async function loadFiles() {
+      const list = document.getElementById('fileList');
+      list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+      try {
+        const r = await fetch(`${BASE}/guest/files?token=${TOKEN}&path=${encodeURIComponent(path)}`);
+        const d = await r.json();
+        const files = d.files || [];
+        document.getElementById('fileCount').textContent = files.length ? `${files.length} item${files.length===1?'':'s'}` : '';
+        updateBreadcrumb();
+        if (!files.length) {
+          list.innerHTML = `<div class="empty">
+            <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div>
+            <h3>No files here</h3><p>This folder is empty</p></div>`;
+          return;
+        }
+        list.innerHTML = files.map(f => fileCard(f)).join('');
+      } catch(e) {
+        list.innerHTML = '<div class="empty"><h3>Could not load files</h3><p>Check your connection</p></div>';
+      }
+    }
+
+    function fileCard(f) {
+      const isDir = f.type === 'folder';
+      const icon = isDir ? folderIcon() : fileIconFor(f.extension);
+      const meta = isDir ? `${f.item_count || 0} items` : formatSize(f.size);
+      const safe = f.path.replace(/\\\\/g,'/').replace(/'/g, "\\'");
+      const action = isDir
+        ? `onclick="nav('${safe}')" `
+        : ``;
+      const dlBtn = !isDir ? `<button class="btn-dl" onclick="dl(event,'${safe}')">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Download</span></button>` : '';
+      const chevron = isDir ? `<svg class="folder-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>` : '';
+      return `<div class="file-item ${isDir?'is-folder':''}" ${action}>
+        <div class="file-icon" style="background:${isDir ? 'rgba(245,158,11,0.1)' : 'rgba(124,58,237,0.08)'}">${icon}</div>
+        <div class="file-info">
+          <div class="file-name">${esc(f.name)}</div>
+          <div class="file-meta">${meta}</div>
+        </div>
+        ${dlBtn}${chevron}
+      </div>`;
+    }
+
+    function nav(p) { path = p; loadFiles(); }
+
+    function dl(e, p) {
+      e.stopPropagation();
+      showToast('Download starting…', 'info');
+      window.location.href = `${BASE}/guest/files/download?token=${TOKEN}&path=${encodeURIComponent(p)}`;
+    }
+
+    // ── Breadcrumb ──
+    function updateBreadcrumb() {
+      const bc = document.getElementById('breadcrumb');
+      const parts = path.split(/[\\/]/).filter(Boolean);
+      const crumbs = [{label:'Root', p:''}];
+      parts.forEach((part, i) => crumbs.push({label:part, p:parts.slice(0,i+1).join('/')}));
+      bc.innerHTML = crumbs.map((c,i) =>
+        `<div class="crumb" onclick="if(${i<crumbs.length-1})nav('${c.p}')">${esc(c.label)}</div>`
+      ).join('');
+    }
+
+    // ── Upload ──
+    const dropZone = document.getElementById('dropZone');
+    const uploadInput = document.getElementById('uploadInput');
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); dropZone.classList.remove('drag');
+      handleUpload(e.dataTransfer.files);
+    });
+    uploadInput.addEventListener('change', () => handleUpload(uploadInput.files));
+
+    async function handleUpload(files) {
+      if (!files.length) return;
+      const prog = document.getElementById('uploadProgress');
+      prog.style.display = 'block';
+      prog.innerHTML = '';
+
+      const items = Array.from(files);
+      const rows = {};
+
+      items.forEach(f => {
+        const id = 'up_' + Math.random().toString(36).slice(2);
+        rows[f.name] = id;
+        prog.innerHTML += `<div class="upload-item">
+          <div class="upload-item-icon">${fileIconFor(f.name.split('.').pop())}</div>
+          <div class="upload-item-info">
+            <div class="upload-item-name">${esc(f.name)}</div>
+            <div class="upload-item-bar"><div class="upload-item-fill" id="${id}" style="width:0%"></div></div>
+          </div>
+          <div class="upload-item-pct" id="${id}_pct">0%</div>
+        </div>`;
+      });
+
+      for (const f of items) {
+        const id = rows[f.name];
+        const xhr = new XMLHttpRequest();
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('destination', path || 'CypherDrop');
+
+        xhr.upload.onprogress = e => {
+          if (!e.lengthComputable) return;
+          const pct = Math.round(e.loaded/e.total*100);
+          const el = document.getElementById(id);
+          const pelEl = document.getElementById(id+'_pct');
+          if (el) el.style.width = pct+'%';
+          if (pelEl) pelEl.textContent = pct+'%';
+        };
+
+        await new Promise(resolve => {
+          xhr.onload = () => {
+            const el = document.getElementById(id);
+            if (el) el.style.background = xhr.status===200 ? 'var(--success)' : 'var(--error)';
+            resolve();
+          };
+          xhr.onerror = resolve;
+          xhr.open('POST', `${BASE}/guest/files/upload?token=${TOKEN}`);
+          xhr.send(fd);
+        });
+      }
+
+      showToast('Upload complete!', 'ok');
+      setTimeout(() => { prog.style.display='none'; prog.innerHTML=''; }, 2500);
+      loadFiles();
+    }
+
+    // ── Icon helpers ──
+    function folderIcon() {
+      return `<svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:#F59E0B;fill:none;stroke-width:2">
+        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`;
+    }
+
+    function fileIconFor(ext) {
+      ext = (ext||'').toLowerCase().replace('.','');
+      const imgs = ['jpg','jpeg','png','gif','webp','bmp','svg','heic'];
+      const vids = ['mp4','mkv','mov','avi','webm','m4v'];
+      const auds = ['mp3','wav','aac','flac','m4a','ogg'];
+      const docs = ['pdf','doc','docx','xls','xlsx','ppt','pptx'];
+      const code = ['js','ts','py','dart','html','css','json','xml','sh'];
+      const arch = ['zip','rar','7z','tar','gz'];
+      const txts = ['txt','md','csv','log'];
+
+      let stroke = '#A78BFA', d = 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z';
+      if (imgs.includes(ext)) { stroke='#06B6D4'; d='M21 9v10a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h10'; }
+      if (vids.includes(ext)) { stroke='#EC4899'; d='M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.899L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z'; }
+      if (auds.includes(ext)) { stroke='#8B5CF6'; d='M9 18V5l12-2v13'; }
+      if (docs.includes(ext)) { stroke='#3B82F6'; }
+      if (code.includes(ext)) { stroke='#22C55E'; d='M16 18l6-6-6-6M8 6l-6 6 6 6'; }
+      if (arch.includes(ext)) { stroke='#F59E0B'; d='M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z'; }
+      if (txts.includes(ext)) { stroke='#94A3B8'; }
+      return `<svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:${stroke};fill:none;stroke-width:2"><path d="${d}"/></svg>`;
+    }
+
+    // ── Utilities ──
+    function formatSize(b) {
+      if (!b) return '0 B';
+      const u = ['B','KB','MB','GB','TB'];
+      const i = Math.min(Math.floor(Math.log(b)/Math.log(1024)), u.length-1);
+      return (b/Math.pow(1024,i)).toFixed(i>0?1:0)+' '+u[i];
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function showToast(msg, type='info') {
+      const box = document.getElementById('toastBox');
+      const el = document.createElement('div');
+      el.className = 'toast '+type;
+      el.textContent = msg;
+      box.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    // ── Install banner: show on mobile ──
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      document.getElementById('installBanner').style.display = 'flex';
+    }
+
+    // ── Boot ──
+    setInterval(updateTimer, 1000);
+    updateTimer();
+    loadFiles();
+    updateBreadcrumb();
+  </script>
+</body>
+</html>

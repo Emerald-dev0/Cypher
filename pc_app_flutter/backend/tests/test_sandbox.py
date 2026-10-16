@@ -528,42 +528,43 @@ class TestSandboxModuleExists:
         route that forgets is the S-04-shaped bug for this control."""
         import ast
 
-        source = Path(server.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
         needed = []
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef):
-                continue
-            routes = []
-            for dec in node.decorator_list:
-                if isinstance(dec, ast.Call) and getattr(dec.func, "attr", "") == "route":
-                    if dec.args and isinstance(dec.args[0], ast.Constant):
-                        routes.append(dec.args[0].value)
-            if not any(
-                isinstance(r, str) and (r.startswith("/files") or r == "/apps/launch")
-                for r in routes
-            ):
-                continue
-            # Informational endpoints that list the allowlist itself, or cancel
-            # an in-flight transfer, do not take a client path.
-            skip = {
-                "get_shared_folders_list",
-                "get_root_files",
-                "get_transfers",
-                "cancel_downloads",
-                "get_upload_destinations",
-            }
-            if node.name in skip:
-                continue
-            body = ast.get_source_segment(source, node) or ""
-            if not any(
-                token in body
-                for token in (
-                    "_require_shared_path",
-                    "_paired_sandbox",
-                    "Sandbox(",
-                    "is_path_in_folders(",
-                )
-            ):
-                needed.append((node.name, routes))
+        route_dir = Path(server.__file__).resolve().parent / "routes"
+        sources = [Path(server.__file__), *sorted(route_dir.glob("*.py"))]
+        for source_path in sources:
+            source = source_path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in tree.body:
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                routes = []
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Call) and getattr(dec.func, "attr", "") == "route":
+                        if dec.args and isinstance(dec.args[0], ast.Constant):
+                            routes.append(dec.args[0].value)
+                if not any(
+                    isinstance(r, str) and (r.startswith("/files") or r == "/apps/launch")
+                    for r in routes
+                ):
+                    continue
+                skip = {
+                    "get_shared_folders_list",
+                    "get_root_files",
+                    "get_transfers",
+                    "cancel_downloads",
+                    "get_upload_destinations",
+                }
+                if node.name in skip:
+                    continue
+                body = ast.get_source_segment(source, node) or ""
+                if not any(
+                    token in body
+                    for token in (
+                        "_require_shared_path",
+                        "_paired_sandbox",
+                        "Sandbox(",
+                        "is_path_in_folders(",
+                    )
+                ):
+                    needed.append((node.name, routes))
         assert needed == [], f"filesystem routes missing a sandbox call: {needed}"

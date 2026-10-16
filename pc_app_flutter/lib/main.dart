@@ -92,6 +92,7 @@ class StartupScreen extends StatefulWidget {
 class _StartupScreenState extends State<StartupScreen> {
   final BackendManager _backend = BackendManager();
   bool _hasError = false;
+  String _phase = 'Locating the CYPHER node…';
 
   @override
   void initState() {
@@ -101,16 +102,16 @@ class _StartupScreenState extends State<StartupScreen> {
 
   Future<void> _initSystem() async {
     if (!mounted) return;
-    setState(() { _hasError = false; });
+    setState(() { _hasError = false; _phase = 'Locating the CYPHER node…'; });
 
-    // 1. Start Python subprocess
+    setState(() => _phase = 'Starting the node…');
     final started = await _backend.start();
     if (!started) {
       if (mounted) setState(() { _hasError = true; });
       return;
     }
 
-    // 2. Wait for /ping to return 200 (health check loop)
+    if (mounted) setState(() => _phase = 'Waiting for /ping…');
     final ready = await _backend.waitForBackendReady();
 
     if (ready) {
@@ -209,7 +210,7 @@ class _StartupScreenState extends State<StartupScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Starting up system...',
+              _phase,
               style: GoogleFonts.inter(fontSize: 12, color: Colors.white30, letterSpacing: 1),
             ),
             const SizedBox(height: 48),

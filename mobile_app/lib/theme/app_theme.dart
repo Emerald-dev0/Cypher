@@ -6,6 +6,27 @@ import 'colors.dart';
 class AppTheme {
   AppTheme._();
 
+  static ThemeData get light {
+    final base = ThemeData.light();
+    return base.copyWith(
+      scaffoldBackgroundColor: CypherColors.lightBgPrimary,
+      primaryColor: CypherColors.accent,
+      colorScheme: const ColorScheme.light(
+        primary: CypherColors.accent,
+        secondary: CypherColors.accentLight,
+        surface: CypherColors.lightBgCard,
+        error: CypherColors.error,
+        onPrimary: Colors.white,
+        onSurface: CypherColors.lightTextPrimary,
+        outline: CypherColors.lightBorder,
+      ),
+      textTheme: GoogleFonts.interTextTheme(base.textTheme).apply(
+        bodyColor: CypherColors.lightTextPrimary,
+        displayColor: CypherColors.lightTextPrimary,
+      ),
+    );
+  }
+
   static ThemeData get dark {
     final base = ThemeData.dark();
     return base.copyWith(

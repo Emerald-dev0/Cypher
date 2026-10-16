@@ -15,8 +15,8 @@ class CypherColors {
   static const accent       = Color(0xFF7C3AED);
   static const accentLight  = Color(0xFF8B5CF6);
   static const accentBright = Color(0xFFA78BFA);
-  static       Color accentDim = const Color(0xFF7C3AED).withOpacity(0.15);
-  static       Color accentGlow = const Color(0xFF7C3AED).withOpacity(0.25);
+  static const Color accentDim = Color(0x267C3AED);
+  static const Color accentGlow = Color(0x407C3AED);
 
   // Semantic (stat ring colors)
   static const cpu     = Color(0xFFF43F5E); // rose
@@ -28,9 +28,9 @@ class CypherColors {
   static const warning = Color(0xFFF59E0B);
   static const info    = Color(0xFF3B82F6);
 
-  static       Color successDim = const Color(0xFF22C55E).withOpacity(0.15);
-  static       Color errorDim   = const Color(0xFFEF4444).withOpacity(0.15);
-  static       Color warningDim = const Color(0xFFF59E0B).withOpacity(0.15);
+  static const Color successDim = Color(0x2622C55E);
+  static const Color errorDim   = Color(0x26EF4444);
+  static const Color warningDim = Color(0x26F59E0B);
 
   // Text
   static const textPrimary   = Color(0xFFFAFAFA);
@@ -39,9 +39,9 @@ class CypherColors {
   static const textDisabled  = Color(0xFF3F3F46);
 
   // Borders
-  static       Color border      = const Color(0xFFFFFFFF).withOpacity(0.06);
-  static       Color borderHover = const Color(0xFFFFFFFF).withOpacity(0.10);
-  static       Color borderFocus = const Color(0xFF7C3AED).withOpacity(0.50);
+  static const Color border      = Color(0x0FFFFFFF);
+  static const Color borderHover = Color(0x1AFFFFFF);
+  static const Color borderFocus = Color(0x807C3AED);
 
   // ── LIGHT MODE ───────────────────────────────────────────────
   // Backgrounds
@@ -57,7 +57,7 @@ class CypherColors {
   static const lightTextDisabled  = Color(0xFFB5B5C5);
 
   // Borders
-  static       Color lightBorder      = const Color(0xFF0A0A1A).withOpacity(0.08);
-  static       Color lightBorderHover = const Color(0xFF0A0A1A).withOpacity(0.12);
-  static       Color lightBorderFocus = const Color(0xFF7C3AED).withOpacity(0.50);
+  static const Color lightBorder      = Color(0x140A0A1A);
+  static const Color lightBorderHover = Color(0x1F0A0A1A);
+  static const Color lightBorderFocus = Color(0x807C3AED);
 }
