@@ -244,7 +244,7 @@ loader and check for `None` before use.
 
 Do not add a dependency whose license is not Apache-2.0-compatible without
 updating `NOTICE` and getting maintainer sign-off.
-`syncfusion_flutter_pdfviewer` is already flagged for removal (see NOTICE).
+CI greps pubspec.yaml for `syncfusion` and other telemetry packages.
 
 ---
 

@@ -24,6 +24,12 @@ void main() {
     });
   });
 
+  group('protocol', () {
+    test('shell and node share protocol version 1', () {
+      expect(BackendManager.expectedProtocolVersion, 1);
+    });
+  });
+
   group('pythonCommands', () {
     test('does not include a hardcoded python.exe path', () {
       final cmds = BackendManager.pythonCommands(pathEnv: '/usr/bin:/usr/local/bin');

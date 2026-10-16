@@ -227,6 +227,11 @@ source at all — default copyright, all rights reserved.
 
 ### Security
 
+- **Removed `syncfusion_flutter_pdfviewer` (P1-B9).** Proprietary Community
+  License was Apache-2.0-incompatible. PDFs download and open in the system
+  viewer. CI bans the package name.
+- **`/ping` reports `version` and `protocol_version` (P1-D1).** The desktop
+  shell refuses to proceed on a protocol mismatch.
 - **`server.py` split into Flask blueprints (P1-B4 / A-02).**
   Routes live in `core/routes/{pairing,files,transfer,system,media,recording,guest}.py`.
   Guest HTML is `templates/guest.html`. Tests still import `core.server`.

@@ -90,9 +90,8 @@ mechanism, and link to the advisory.
 - [ ] No open issue labelled `release-blocker`.
 - [ ] No critical/high CVE in `pip-audit` / `flutter pub deps` output (P2-S8).
 - [ ] `NOTICE` reflects the dependency set that actually shipped.
-- [ ] **P1-B9 resolved:** no proprietary-license component bundled
-      (currently `syncfusion_flutter_pdfviewer` — see `NOTICE`). Publishing a
-      binary containing it violates our own Apache-2.0 licensing.
+- [ ] No proprietary-license component bundled (`NOTICE` is the source of truth).
+      P1-B9 removed `syncfusion_flutter_pdfviewer`.
 - [ ] The manual device matrix in [`plans/test-matrix.md`](plans/test-matrix.md)
       has been run for this version.
 - [ ] For a security release: the advisory is prepared and scheduled to publish

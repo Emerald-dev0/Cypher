@@ -12,6 +12,7 @@ Run:  pytest tests/test_security.py -v
 from __future__ import annotations
 
 import hmac
+import json
 import os
 import secrets
 
@@ -125,6 +126,16 @@ class TestAuthenticationByDefault:
 
     def test_ping_is_public(self, client):
         assert client.get("/ping").status_code == 200
+
+    def test_ping_advertises_protocol_version(self, client):
+        """P1-D1: the shell refuses to talk to a node whose protocol it does not speak."""
+        from core.version import NODE_VERSION, PROTOCOL_VERSION
+
+        body = client.get("/ping").get_json()
+        assert body["protocol_version"] == PROTOCOL_VERSION
+        assert body["version"] == NODE_VERSION
+        assert "token" not in body
+        assert "pairing" not in json.dumps(body).lower()
 
     def test_status_is_public_but_leaks_nothing_sensitive(self, client):
         """`/status` is public because discovery needs it. It must not become a

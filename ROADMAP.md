@@ -90,7 +90,7 @@ abused.** Estimated 3–4 weeks part-time.
 | **P1-B1** | Shrink `.git` from 78 MB | Executed alongside P1-S1 with the same `filter-repo` pass. Target < 15 MB. | 0d |
 | **P1-B4** ✅ | **Decompose server.py** — SHIPPED | Blueprints in `core/routes/{pairing,files,system,media,recording,guest,transfer}.py`. Guest HTML in `templates/guest.html`. Views rewired onto `core.server` state. `system.py` still ~730 lines (follow-up). | done |
 | **P1-B8** | Single source of version truth | One `VERSION` file (or `version.py`) generates pubspec versions, `metadata.json`, the `.iss` stamp, and Dart's runtime version via `package_info_plus`. Delete every hardcoded version constant. `release.yml` preflight already enforces agreement; this removes the manual step. | 2d |
-| **P1-B9** | **Remove `syncfusion_flutter_pdfviewer`** — release blocker | Its Community License is proprietary and **not Apache-2.0-compatible**, so binary distributions bundling it cannot be published under our license (see `NOTICE`). Replace with `pdfrx` or `pdfx` (BSD/Apache). | 2d |
+| **P1-B9** ✅ | **Remove Syncfusion PDF viewer** — SHIPPED | Dropped from `mobile_app`. PDFs open via the system viewer. CI bans `syncfusion`. | done |
 | P1-B2 | Pyproject + ruff/mypy config for the node | `ruff` config with the F/E9 selection CI already runs; `mypy` in gradual mode on `core/sandbox.py` and `core/auth.py` first. | 1d |
 | P1-B3 | `py.typed` and type hints on the security-critical modules | Sandbox, auth, guest manager. | 3d |
 | P1-B5 | Pre-commit config | ruff, ruff-format, dart format, gitleaks, trailing whitespace, large-file block. | 1d |
@@ -113,7 +113,7 @@ abused.** Estimated 3–4 weeks part-time.
 | ID | Task | Detail | Est. |
 | --- | --- | --- | --- |
 | **P1-D2** ✅ | **Fix backend discovery** — SHIPPED | Roots from `Platform.resolvedExecutable` then cwd. PATH search. No hardcoded user home. Error screen shows `usedInterpreter`. | done |
-| P1-D1 | Node health protocol | `/ping` returns build version + protocol version; the shell refuses to talk to a mismatched node instead of failing mysteriously. | 1d |
+| **P1-D1** ✅ | **Node health protocol** — SHIPPED | `GET /ping` returns `version` + `protocol_version`. Shell refuses a mismatch. | done |
 | P1-D3 | Structured node logging | Replace `print()` with the `logging` module already configured in `service.py`; rotate to `<appData>/cypher/logs/node.log`; surface in the desktop Health tab. | 2d |
 
 ### Docs & community

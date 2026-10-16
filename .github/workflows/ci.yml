@@ -360,7 +360,7 @@ jobs:
           # The project's contract is "local-first, no telemetry". These
           # packages would break that promise. See NOTICE and
           # docs/plans/security-hardening.md · Phase S5.
-          banned='firebase|google-services|analytics|sentry|mixpanel|amplitude|segment|posthog|onesignal|facebook'
+          banned='firebase|google-services|analytics|sentry|mixpanel|amplitude|segment|posthog|onesignal|facebook|syncfusion'
           if grep -qiE "$banned" pubspec.yaml; then
             echo "::error::pubspec.yaml declares a telemetry/cloud dependency:"
             grep -inE "$banned" pubspec.yaml

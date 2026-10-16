@@ -77,7 +77,7 @@ python_version = "3.11"
 # Enforced in CI (see .github/workflows/ci.yml). Adding a module to `files` is a
 # one-way door: once it type-checks, removing it needs justification.
 #
-files = ["core/guest_manager.py", "core/utils.py", "core/sandbox.py", "core/auth.py", "core/hostguard.py"]
+files = ["core/guest_manager.py", "core/utils.py", "core/sandbox.py", "core/auth.py", "core/hostguard.py", "core/version.py"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true

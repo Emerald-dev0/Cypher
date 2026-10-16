@@ -126,6 +126,7 @@ from .utils import (
 )
 from .sandbox import Sandbox, SandboxViolation, is_path_in_folders  # noqa: F401 — used by rewired route views
 from .auth import is_public_view, public_endpoint_names, public_route
+from .version import NODE_VERSION, PROTOCOL_VERSION
 
 # BUGFIX: guest_manager was referenced as a bare module-level name in ~14 route
 # handlers (and in the before_request auth hook) but was only ever imported
@@ -503,7 +504,13 @@ else:
 @app.route('/ping', methods=['GET'])
 @public_route
 def ping():
-    return jsonify({"message": "pong", "status": "ok", "timestamp": datetime.now().strftime("%H:%M:%S")})
+    return jsonify({
+        "message": "pong",
+        "status": "ok",
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "version": NODE_VERSION,
+        "protocol_version": PROTOCOL_VERSION,
+    })
 
 # --- SECURITY & LOGGING MIDDLEWARE ---
 

@@ -79,11 +79,6 @@ updates:
       mobile-minor-patch:
         update-types: [minor, patch]
         patterns: ["*"]
-    ignore:
-      # Syncfusion is a licensing blocker (see NOTICE) and is scheduled for
-      # removal; do not spend review cycles upgrading it.
-      - dependency-name: "syncfusion_flutter_pdfviewer"
-
   # ── Flutter desktop client ─────────────────────────────────
   - package-ecosystem: pub
     directory: "/pc_app_flutter"

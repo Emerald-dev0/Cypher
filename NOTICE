@@ -60,22 +60,9 @@ Mobile & desktop clients (Flutter/Dart)
   url_launcher, share_plus, device_info_plus                    — BSD-3-Clause
   open_filex, media_scanner                                     — MIT / Apache-2.0
   video_player, chewie, just_audio                              — BSD-3-Clause / MIT
-  syncfusion_flutter_pdfviewer                                  — Syncfusion Community License
   flutter_markdown, flutter_highlight                           — BSD-3-Clause / MIT
   uuid                                                          — MIT
   nsd                                                           — MIT
-
-──────────────────────────────────────────────────────────────────────────────
-Licensing note on syncfusion_flutter_pdfviewer
-──────────────────────────────────────────────────────────────────────────────
-Syncfusion widgets are offered under a proprietary Community License that is
-free for individuals and small companies but is NOT an OSI-approved open-source
-license, and its terms are not compatible with redistribution under Apache-2.0.
-
-This is tracked as a release blocker: docs/plans/roadmap.md · Phase 1 (P1-B9)
-replaces the PDF preview with an Apache/BSD-compatible renderer before the first
-public tagged release. Until that lands, binary distributions that bundle the
-Syncfusion component must not be published.
 
 ──────────────────────────────────────────────────────────────────────────────
 Trademarks

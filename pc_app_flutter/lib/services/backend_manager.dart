@@ -27,6 +27,10 @@ class BackendManager {
   /// Which python/exe actually started. Surfaced on the error screen.
   String? get usedInterpreter => _usedInterpreter;
 
+  /// Must match `core.version.PROTOCOL_VERSION`. A mismatch is a hard fail
+  /// (P1-D1) so a stale shell cannot talk to a newer node and get mysterious 404s.
+  static const expectedProtocolVersion = 1;
+
   Future<bool> start() async {
     _errorLog = "";
     _usedInterpreter = null;
@@ -192,6 +196,17 @@ class BackendManager {
         ).timeout(const Duration(seconds: 1));
 
         if (response.statusCode == 200) {
+          try {
+            final body = json.decode(response.body);
+            final proto = body is Map ? body['protocol_version'] : null;
+            if (proto is num && proto.toInt() != expectedProtocolVersion) {
+              _errorLog +=
+                  'Node protocol $proto is not $expectedProtocolVersion. Update the desktop shell.\n';
+              return false;
+            }
+          } catch (_) {
+            // Older nodes returned a bare pong; still treat as ready.
+          }
           debugPrint('Backend ready');
           _isReady = true;
           return true;
