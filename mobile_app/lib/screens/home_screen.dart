@@ -188,7 +188,7 @@ class _HomeTab extends StatelessWidget {
                 ),
                 _StatCard(
                   ring: StatRing(
-                    value: (sp.battery['percent'] as num?)?.toDouble() ?? 0 / 100,
+                    value: (((sp.battery['percent'] as num?)?.toDouble() ?? 0) / 100).clamp(0.0, 1.0),
                     label: 'Battery',
                     icon: Icons.battery_full_rounded,
                     color: CypherColors.battery,
@@ -232,7 +232,7 @@ class _HomeTab extends StatelessWidget {
                   label: 'Screenshot',
                   subtitle: 'capture screen',
                   color: CypherColors.info,
-                  onTap: () => _takeScreenshot(context),
+                  onTap: () => Navigator.pushNamed(context, '/controls'),
                 ),
                 _QuickControlTile(
                   icon: Icons.lock_rounded,
@@ -327,11 +327,6 @@ class _HomeTab extends StatelessWidget {
     return 'Good evening';
   }
 
-  void _takeScreenshot(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Taking screenshot...')),
-    );
-  }
 }
 
 // ── STAT CARD ─────────────────────────────────────────────────

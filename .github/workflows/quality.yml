@@ -1,0 +1,46 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pc_app_flutter/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Compile backend
+        run: python -m compileall -q core *.py
+      - name: Run backend tests
+        run: python -m unittest test_suite.py -v
+
+  flutter:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app:
+          - mobile_app
+          - pc_app_flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: ${{ matrix.app }}
+        run: flutter pub get
+      - name: Analyze
+        working-directory: ${{ matrix.app }}
+        run: flutter analyze
+      - name: Test
+        working-directory: ${{ matrix.app }}
+        run: flutter test

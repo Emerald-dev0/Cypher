@@ -58,21 +58,18 @@ class TestCypherBackend(unittest.TestCase):
 
         self.assertIn(token, server.valid_tokens)
 
-    @patch('pygetwindow.getActiveWindow')
-    def test_window_manager_logic(self, mock_get_win):
+    def test_window_manager_logic(self):
         # Mock a window object
         mock_win = MagicMock()
         mock_win.title = "Visual Studio Code"
         mock_win._hWnd = 12345
-        mock_get_win.return_value = mock_win
 
-        if server.WINDOWS:
-            win_info = {
-                "title": mock_win.title,
-                "id": mock_win._hWnd
-            }
-            self.assertEqual(win_info["title"], "Visual Studio Code")
-            self.assertEqual(win_info["id"], 12345)
+        win_info = {
+            "title": mock_win.title,
+            "id": mock_win._hWnd
+        }
+        self.assertEqual(win_info["title"], "Visual Studio Code")
+        self.assertEqual(win_info["id"], 12345)
 
     def test_recording_state_transitions(self):
         # Verify initial state
@@ -91,7 +88,7 @@ class TestCypherBackend(unittest.TestCase):
         from pathlib import Path
 
         # We'll test the logic without actual disk writes by mocking os.path.exists
-        with patch('os.path.exists') as mock_exists:
+        with patch('pathlib.Path.exists') as mock_exists:
             # Case 1: File doesn't exist
             mock_exists.return_value = False
             path = server.get_unique_path("C:/test/file.txt")

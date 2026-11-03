@@ -119,7 +119,7 @@ CYPHER is a **full-featured remote control system** for Windows PCs, allowing yo
 #### **1. PC Setup**
 ```bash
 # Clone repo
-git clone https://github.com/yourusername/cypher.git
+git clone https://github.com/Emerald-dev0/Cypher.git
 cd cypher
 
 # Install Python dependencies
